@@ -38,10 +38,9 @@ function AuthPageContent() {
     try {
       if (tab === 'register') {
         const { data } = await authApi.register(form.email, form.password, form.fullName, form.masterHint);
-        setAuth(
-          { id: data.user_id, email: form.email, full_name: form.fullName, vault_salt: data.vault_salt },
-          data.access_token, data.refresh_token
-        );
+        sessionStorage.setItem('access_token', data.access_token);
+        const { data: user } = await authApi.me();
+        setAuth(user, data.access_token, data.refresh_token);
         toast.success('Account created! Set your master password to unlock the vault.');
       } else {
         const { data } = await authApi.login(form.email, form.password);
@@ -59,7 +58,6 @@ function AuthPageContent() {
     }
   };
 
-  // Extract button label from nested ternary
   let buttonLabel = '';
   if (loading) {
     buttonLabel = 'Please wait...';
