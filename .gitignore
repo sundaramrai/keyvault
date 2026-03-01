@@ -1,0 +1,14 @@
+# Environment Variables
+.env
+.env.local
+
+# Python / FastAPI
+venv/
+__pycache__/
+
+# Next.js / Node
+node_modules/
+.next/
+
+# IDE / Editor Files
+.vscode/
