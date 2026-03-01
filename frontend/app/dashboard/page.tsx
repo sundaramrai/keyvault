@@ -31,7 +31,7 @@ export default function Dashboard() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [newItem, setNewItem] = useState({ name: '', category: 'login', username: '', password: '', url: '', notes: '' });
-  const [genOptions] = useState({ length: 20, uppercase: true, lowercase: true, numbers: true, symbols: true });
+  const genOptions = { length: 20, uppercase: true, lowercase: true, numbers: true, symbols: true };
   const [sessionLoading, setSessionLoading] = useState(true);
 
   useEffect(() => {
