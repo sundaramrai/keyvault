@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
+from jose import JWTError
 
 from database import get_db, User, AuditLog, RefreshToken
 from crypto import (
     hash_password, verify_password,
     create_access_token, create_refresh_token, decode_token,
-    hash_refresh_token, generate_salt
+    hash_refresh_token, generate_salt, REFRESH_TOKEN_EXPIRE_DAYS
 )
 from schemas import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest, UserResponse
 from deps import get_current_user_from_db
@@ -45,7 +46,7 @@ def register(body: RegisterRequest, request: Request, db: Session = Depends(get_
     rt = RefreshToken(
         user_id=user.id,
         token_hash=hash_refresh_token(refresh_token),
-        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
     )
     db.add(rt)
     log_action(db, user.id, "REGISTER", request)
@@ -71,7 +72,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     rt = RefreshToken(
         user_id=user.id,
         token_hash=hash_refresh_token(refresh_token),
-        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
     )
     db.add(rt)
     log_action(db, user.id, "LOGIN", request)
@@ -86,7 +87,6 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/refresh", response_model=TokenResponse)
 def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
-    from jose import JWTError
     try:
         payload = decode_token(body.refresh_token)
         if payload.get("type") != "refresh":
@@ -116,7 +116,7 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
     new_rt = RefreshToken(
         user_id=user_id,
         token_hash=hash_refresh_token(new_refresh),
-        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
     )
     db.add(new_rt)
     db.commit()
