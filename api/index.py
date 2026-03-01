@@ -1,6 +1,6 @@
 """
-api/index.py — FastAPI app wrapped with Mangum for Vercel serverless deployment.
-Each route in FastAPI maps to a serverless function invocation on Vercel.
+api/index.py — FastAPI app for Vercel serverless deployment.
+Vercel's @vercel/python runtime supports ASGI natively — no Mangum needed.
 """
 
 import sys
@@ -9,7 +9,6 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from mangum import Mangum
 
 from database import create_tables
 from routes.auth import router as auth_router
@@ -51,7 +50,3 @@ app.include_router(vault_router, prefix="/api")
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "cipheria-api"}
-
-
-# Mangum handler — wraps ASGI app for AWS Lambda / Vercel serverless
-handler = Mangum(app, lifespan="off")
