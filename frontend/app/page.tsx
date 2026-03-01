@@ -113,7 +113,7 @@ export default function LandingPage() {
       {/* Footer */}
       <footer style={{ borderTop: '1px solid var(--border)', padding: '24px 32px', textAlign: 'center' }}>
         <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-          © 2024 KeyVault · Open source · No ads · No tracking
+          © 2026 KeyVault · Open source · No ads · No tracking
         </span>
       </footer>
     </main>
