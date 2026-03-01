@@ -1,11 +1,8 @@
-# 🔑 KeyVault — Zero-Knowledge Password Manager
+# KeyVault — Zero-Knowledge Password Manager
 
-A production-grade, self-hosted password manager with:
-- **Next.js** frontend (Vercel)
-- **FastAPI** serverless backend (Vercel Functions)
-- **Neon PostgreSQL** serverless database
-- **Browser Extension** (Chrome/Firefox/Edge)
-- **AES-256-GCM** client-side encryption — the server *never* sees your passwords
+A self-hosted password manager with client-side AES-256-GCM encryption. The server never sees your passwords.
+
+**Stack:** Next.js (Vercel) · FastAPI serverless (Vercel Functions) · Neon PostgreSQL · Browser Extension (MV3)
 
 ---
 
@@ -14,8 +11,8 @@ A production-grade, self-hosted password manager with:
 ```
 Browser / Extension
     │
-    ├── Web Crypto API (PBKDF2 key derivation + AES-256-GCM)
-    │       Master Password → 256-bit key (never leaves device)
+    ├── Web Crypto API — PBKDF2 key derivation + AES-256-GCM
+    │       Master password → 256-bit key (never leaves device)
     │
     ├── Next.js Frontend (Vercel)
     │       Encrypts data client-side before sending to API
@@ -26,50 +23,46 @@ Browser / Extension
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Clone & install
 
 ```bash
-git clone https://github.com/yourname/keyvault
+git clone https://github.com/sundaramrai/keyvault
 cd keyvault
-
-# Install frontend deps
 cd frontend && npm install && cd ..
 ```
 
-### 2. Set up Neon database
+### 2. Neon database
 
-1. Go to [neon.tech](https://neon.tech) → Create account → New project
-2. Copy the **Connection string** (it looks like `postgresql://user:pass@ep-xxx.neon.tech/neondb`)
-3. Tables are created automatically on first API call (`create_tables()`)
+1. Create a project at [neon.tech](https://neon.tech)
+2. Copy the connection string — tables are created automatically on first API call
 
-### 3. Configure environment
+### 3. Environment
 
-```bash
-cp .env.example .env
-# Fill in DATABASE_URL and JWT_SECRET
+**`api/.env`**
+
+```
+DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/neondb
+JWT_SECRET=<run: python -c "import secrets; print(secrets.token_hex(32))">
 ```
 
-Generate a JWT secret:
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
+**`frontend/.env.local`**
+
+```
+NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 ### 4. Run locally
 
-**Backend:**
 ```bash
+# Backend
 cd api
 pip install -r requirements.txt
 uvicorn index:app --reload --port 8000
-```
 
-**Frontend:**
-```bash
+# Frontend (separate terminal)
 cd frontend
-cp ../.env.example .env.local
-# Set NEXT_PUBLIC_API_URL=http://localhost:8000
 npm run dev
 ```
 
@@ -77,72 +70,63 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ---
 
-## ☁️ Deploy to Vercel
-
-### One-click (recommended)
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new)
-
-### Manual
+## Deploy to Vercel
 
 ```bash
 npm i -g vercel
 vercel login
-
-# From project root:
 vercel
 
-# Set environment variables in Vercel dashboard or via CLI:
+# Set env vars
 vercel env add DATABASE_URL
 vercel env add JWT_SECRET
-vercel env add NEXT_PUBLIC_API_URL  # set to your vercel URL after first deploy
+vercel env add NEXT_PUBLIC_API_URL   # set to your Vercel URL after first deploy
 ```
 
-The `vercel.json` at root routes `/api/*` → FastAPI and everything else → Next.js.
+`vercel.json` routes `/api/*` to FastAPI and everything else to Next.js.
 
 ---
 
-## 🧩 Browser Extension
+## Browser Extension
 
 ### Load in Chrome
 
 1. Open `chrome://extensions`
-2. Enable **Developer mode** (top right)
-3. Click **Load unpacked**
-4. Select the `extension/` folder
+2. Enable **Developer mode**
+3. Click **Load unpacked** → select the `extension/` folder
 
-### Configure
+### Configure for production
 
 Edit `extension/popup.js` line 1:
+
 ```js
-const API_URL = 'https://your-app.vercel.app'; // ← Your Vercel URL
+const API_URL = "https://your-app.vercel.app";
 ```
 
-### Package for distribution
+### Package
 
 ```bash
 cd extension
 zip -r keyvault-extension.zip . -x "*.DS_Store"
-# Upload to Chrome Web Store or Firefox Add-ons
 ```
 
 ---
 
-## 🔐 Security Model
+## Security Model
 
-| Layer | What's protected | How |
-|-------|-----------------|-----|
-| Auth password | Stored hashed (bcrypt, cost 12) | Never stored in plain text |
-| Master password | **Never sent to server** | PBKDF2-SHA256, 600k iterations, derives AES key client-side |
-| Vault data | AES-256-GCM encrypted | Unique 12-byte IV per item |
-| Transport | TLS 1.3 | Vercel enforced |
-| Tokens | Short-lived JWTs (30min) + rotating refresh tokens | Refresh tokens stored hashed |
+| Layer           | Protection                                          | Method                         |
+| --------------- | --------------------------------------------------- | ------------------------------ |
+| Auth password   | Hashed (bcrypt cost 12)                             | Never stored in plain text     |
+| Master password | Never sent to server                                | PBKDF2-SHA256, 600k iterations |
+| Vault data      | AES-256-GCM                                         | Unique 12-byte IV per item     |
+| Transport       | TLS 1.3                                             | Vercel enforced                |
+| Tokens          | Short-lived JWTs (30 min) + rotating refresh tokens | Refresh tokens stored hashed   |
 
-**The server stores only ciphertext. Even a complete database breach exposes no passwords.**
+A complete database breach exposes no plaintext passwords.
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 keyvault/
@@ -153,67 +137,62 @@ keyvault/
 │   ├── schemas.py          # Pydantic request/response schemas
 │   ├── deps.py             # Auth dependency injection
 │   ├── routes/
-│   │   ├── auth.py         # /api/auth/* (register, login, refresh, logout)
-│   │   └── vault.py        # /api/vault/* (CRUD + export)
+│   │   ├── auth.py         # /api/auth/*
+│   │   └── vault.py        # /api/vault/*
 │   └── requirements.txt
 │
 ├── frontend/               # Next.js app
 │   ├── app/
-│   │   ├── layout.tsx      # Root layout
+│   │   ├── layout.tsx
 │   │   ├── page.tsx        # Landing page
 │   │   ├── auth/page.tsx   # Login / Register
-│   │   └── dashboard/page.tsx  # Main vault UI
+│   │   └── dashboard/page.tsx
 │   ├── lib/
 │   │   ├── crypto.ts       # Web Crypto API (PBKDF2 + AES-256-GCM)
-│   │   ├── api.ts          # Axios client + auto-refresh
-│   │   └── store.ts        # Zustand state management
+│   │   ├── api.ts          # Axios client + auto-refresh interceptor
+│   │   └── store.ts        # Zustand state
 │   └── styles/globals.css
 │
 ├── extension/              # Browser extension (MV3)
 │   ├── manifest.json
-│   ├── popup.html          # Extension popup UI
-│   ├── popup.js            # Popup logic + crypto
+│   ├── popup.html
+│   ├── popup.js
 │   ├── background.js       # Service worker (key storage)
 │   └── content.js          # Autofill injection
 │
-├── vercel.json             # Routing config
-└── .env.example            # Environment template
+├── vercel.json
+└── .env.example
 ```
 
 ---
 
-## 🛠 API Reference
+## API Reference
 
-**Auth:**
-- `POST /api/auth/register` — Create account
-- `POST /api/auth/login` — Get tokens
-- `POST /api/auth/refresh` — Rotate refresh token
-- `POST /api/auth/logout` — Revoke refresh token
-- `GET  /api/auth/me` — Current user
+**Auth** — `/api/auth/`
 
-**Vault:**
-- `GET    /api/vault` — List items (supports `?search=`, `?category=`, `?favourites_only=true`)
-- `POST   /api/vault` — Create item
-- `GET    /api/vault/:id` — Get item
-- `PATCH  /api/vault/:id` — Update item
-- `DELETE /api/vault/:id` — Delete item
-- `GET    /api/vault/export/json` — Export encrypted vault
+- `POST /register` · `POST /login` · `POST /refresh` · `POST /logout` · `GET /me`
+
+**Vault** — `/api/vault/`
+
+- `GET /` — list (supports `?search=`, `?category=`, `?favourites_only=true`)
+- `POST /` · `GET /:id` · `PATCH /:id` · `DELETE /:id`
+- `GET /export/json`
 
 Interactive docs: `https://your-app.vercel.app/api/docs`
 
 ---
 
-## 🗺 Roadmap
+## Roadmap
 
 - [ ] TOTP two-factor authentication
 - [ ] Passkey / WebAuthn support
 - [ ] Secure sharing (public-key encrypted)
+- [ ] Password health dashboard (HIBP breach detection)
 - [ ] iOS / Android app (React Native)
-- [ ] Password health dashboard (breach detection via HIBP)
-- [ ] Organizations / team vaults
+- [ ] Team / organization vaults
 
 ---
 
 ## License
 
-MIT
+GPL-3.0
