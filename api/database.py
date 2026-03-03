@@ -1,4 +1,4 @@
-﻿from sqlalchemy import create_engine, Column, String, Text, Boolean, Integer
+﻿from sqlalchemy import create_engine, Column, String, Text, Boolean, Integer, Index
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 from sqlalchemy.types import TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID
@@ -18,9 +18,11 @@ if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # Append SSL + timeout params for Neon if not already present
-if "neon.tech" in DATABASE_URL and "sslmode" not in DATABASE_URL:
-    sep = "&" if "?" in DATABASE_URL else "?"
-    DATABASE_URL += f"{sep}sslmode=require&connect_timeout=10"
+if "neon.tech" in DATABASE_URL:
+    if "sslmode" not in DATABASE_URL:
+        DATABASE_URL += ("&" if "?" in DATABASE_URL else "?") + "sslmode=require"
+    if "connect_timeout" not in DATABASE_URL:
+        DATABASE_URL += "&connect_timeout=10"
 
 # NullPool is required for serverless — no persistent connections kept between requests
 engine = create_engine(DATABASE_URL, poolclass=NullPool)
@@ -63,6 +65,11 @@ class VaultItem(Base):
     is_favourite = Column(Boolean, default=False)
     created_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        # Covers: WHERE user_id = ? ORDER BY updated_at DESC
+        Index('ix_vault_items_user_updated', 'user_id', 'updated_at'),
+    )
 
 
 class AuditLog(Base):
