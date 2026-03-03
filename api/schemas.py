@@ -4,7 +4,14 @@ from datetime import datetime
 from uuid import UUID
 
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
+def _validate_favicon_url(v: Optional[str]) -> Optional[str]:
+    if v is not None:
+        if not (v.startswith('https://') or v.startswith('http://')):
+            raise ValueError('favicon_url must be a valid HTTP/S URL')
+    return v
+
+
+# Auth
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -39,16 +46,16 @@ class RefreshRequest(BaseModel):
 class UserResponse(BaseModel):
     id: UUID
     email: str
-    full_name: Optional[str]
+    full_name: Optional[str] = None
     vault_salt: str
-    master_hint: Optional[str]
+    master_hint: Optional[str] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
 
 
-# ── Vault Items ───────────────────────────────────────────────────────────────
+# Vault Items
 
 class VaultItemCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
@@ -60,10 +67,7 @@ class VaultItemCreate(BaseModel):
     @field_validator('favicon_url')
     @classmethod
     def validate_favicon_url(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None:
-            if not (v.startswith('https://') or v.startswith('http://')):
-                raise ValueError('favicon_url must be a valid HTTP/S URL')
-        return v
+        return _validate_favicon_url(v)
 
 
 class VaultItemUpdate(BaseModel):
@@ -76,10 +80,7 @@ class VaultItemUpdate(BaseModel):
     @field_validator('favicon_url')
     @classmethod
     def validate_favicon_url(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None:
-            if not (v.startswith('https://') or v.startswith('http://')):
-                raise ValueError('favicon_url must be a valid HTTP/S URL')
-        return v
+        return _validate_favicon_url(v)
 
 
 class VaultItemResponse(BaseModel):
@@ -87,7 +88,7 @@ class VaultItemResponse(BaseModel):
     name: str
     category: str
     encrypted_data: str
-    favicon_url: Optional[str]
+    favicon_url: Optional[str] = None
     is_favourite: bool
     created_at: datetime
     updated_at: datetime
