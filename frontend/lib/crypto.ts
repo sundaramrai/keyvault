@@ -100,6 +100,28 @@ export function generatePassword(options: {
   return Array.from(array, (x) => charset[x % charset.length]).join('');
 }
 
+// HIBP Pwned Passwords — k-anonymity model (SHA-1 prefix, never sends full hash)
+export async function checkHIBP(password: string): Promise<number> {
+  const encoded = new TextEncoder().encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-1', encoded);
+  const hashHex = Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase();
+  const prefix = hashHex.slice(0, 5);
+  const suffix = hashHex.slice(5);
+
+  const response = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
+    headers: { 'Add-Padding': 'true' }, // prevents traffic-analysis of result count
+  });
+  if (!response.ok) throw new Error('HIBP API unavailable');
+
+  const text = await response.text();
+  const line = text.split('\n').find((l) => l.trimStart().startsWith(suffix));
+  if (!line) return 0;
+  return Number.parseInt(line.split(':')[1], 10);
+}
+
 // Password Strength
 export function passwordStrength(password: string): {
   score: number;
