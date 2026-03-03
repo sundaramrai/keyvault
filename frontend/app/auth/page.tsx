@@ -3,7 +3,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Key, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { authApi } from '@/lib/api';
+import { authApi, setAccessToken } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { passwordStrength } from '@/lib/crypto';
 
@@ -38,15 +38,15 @@ function AuthPageContent() {
     try {
       if (tab === 'register') {
         const { data } = await authApi.register(form.email, form.password, form.fullName, form.masterHint);
-        sessionStorage.setItem('access_token', data.access_token);
+        setAccessToken(data.access_token);
         const { data: user } = await authApi.me();
-        setAuth(user, data.access_token, data.refresh_token);
+        setAuth(user, data.access_token);
         toast.success('Account created! Set your master password to unlock the vault.');
       } else {
         const { data } = await authApi.login(form.email, form.password);
-        sessionStorage.setItem('access_token', data.access_token);
+        setAccessToken(data.access_token);
         const { data: user } = await authApi.me();
-        setAuth(user, data.access_token, data.refresh_token);
+        setAuth(user, data.access_token);
         toast.success('Welcome back!');
       }
       router.push('/dashboard');
