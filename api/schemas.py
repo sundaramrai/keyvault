@@ -76,7 +76,22 @@ class VaultItemUpdate(BaseModel):
         return _validate_favicon_url(v)
 
 
+class VaultItemSummary(BaseModel):
+    """Metadata-only response — no encrypted_data. Used by the list endpoint."""
+    id: UUID
+    name: str
+    category: str
+    favicon_url: Optional[str] = None
+    is_favourite: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class VaultItemResponse(BaseModel):
+    """Full response including encrypted_data. Used by create, update and detail endpoints."""
     id: UUID
     name: str
     category: str
