@@ -1,4 +1,4 @@
-﻿from sqlalchemy import create_engine, Column, String, Text, Boolean, Integer, Index
+﻿from sqlalchemy import create_engine, Column, String, Text, Boolean, Integer, Index, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 from sqlalchemy.types import TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID
@@ -104,3 +104,18 @@ def get_db() -> Generator[Session, None, None]:
 
 def create_tables():
     Base.metadata.create_all(bind=engine)
+    # pg_trgm powers fast ILIKE '%term%' via GIN index
+    # Only runs in development; run the SQL below manually on Neon prod:
+    #   CREATE EXTENSION IF NOT EXISTS pg_trgm;
+    #   CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_vault_items_name_trgm
+    #     ON vault_items USING gin (name gin_trgm_ops);
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_vault_items_name_trgm "
+                "ON vault_items USING gin (name gin_trgm_ops)"
+            ))
+            conn.commit()
+    except Exception as e:
+        print(f"Warning: Could not create pg_trgm index: {e}")
