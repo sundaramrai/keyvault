@@ -22,9 +22,9 @@ from typing import Optional
 import bcrypt
 from jose import jwt
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# Config
 
-SECRET_KEY = os.getenv("JWT_SECRET", secrets.token_hex(32))
+SECRET_KEY = os.getenv("JWT_SECRET", secrets.token_hex(48))
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 30
@@ -36,7 +36,7 @@ def _pre_hash(password: str) -> bytes:
     return base64.b64encode(digest)
 
 
-# ── Password hashing ──────────────────────────────────────────────────────────
+# Password hashing
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(_pre_hash(password), bcrypt.gensalt(rounds=12)).decode()
@@ -46,7 +46,7 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(_pre_hash(plain), hashed.encode())
 
 
-# ── JWT ───────────────────────────────────────────────────────────────────────
+# JWT
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
@@ -66,7 +66,7 @@ def decode_token(token: str) -> dict:
     return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 
 
-# ── Secure utilities ──────────────────────────────────────────────────────────
+# Secure utilities
 
 def generate_salt(length: int = 32) -> str:
     """Generate a cryptographically secure random salt (hex string)."""
