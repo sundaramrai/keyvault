@@ -74,7 +74,6 @@ def create_item(
     )
     db.add(item)
     db.commit()
-    db.refresh(item)
     return item
 
 # update vault item
@@ -97,7 +96,6 @@ def update_item(
         setattr(item, field, value)
 
     db.commit()
-    db.refresh(item)
     return item
 
 # delete vault item
