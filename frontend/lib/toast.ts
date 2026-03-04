@@ -7,7 +7,6 @@
  *   - Error messages flow through the shared `parseApiError` helper.
  *
  * Usage examples
- * ──────────────
  * Simple:
  *   toastService.success('Saved!');
  *   toastService.error('Something went wrong');
