@@ -81,7 +81,7 @@ export const authApi = {
 // Vault
 
 export const vaultApi = {
-  list: (params?: { category?: string; search?: string; favourites_only?: boolean }, signal?: AbortSignal) =>
+  list: (params?: { category?: string; search?: string; favourites_only?: boolean; page?: number; page_size?: number }, signal?: AbortSignal) =>
     api.get('/api/vault', { params, signal }),
 
   get: (id: string) => api.get(`/api/vault/${id}`),
