@@ -70,7 +70,7 @@ const buildPayload = (form: typeof emptyForm) => {
 };
 
 // Custom hook for vault unlock logic
-function useVaultUnlock(user: any, setVaultKey: any, setVaultItems: any) {
+function useVaultUnlock(user: any, setVaultKey: any, setVaultItems: any, setTotalPages: (n: number) => void) {
   const [masterPassword, setMasterPassword] = useState('');
   const [unlocking, setUnlocking] = useState(false);
   const [signout, setSignout] = useState(false);
@@ -90,7 +90,7 @@ function useVaultUnlock(user: any, setVaultKey: any, setVaultItems: any) {
           // Verify the master password is correct before accepting it.
           // Fetch one item and try to decrypt it — if it fails the password is wrong.
           update('Verifying master password...');
-          const { data: listResult } = await vaultApi.list();
+          const { data: listResult } = await vaultApi.list({ page_size: 100 });
           const items = listResult.items;
 
           if (items.length > 0) {
@@ -107,6 +107,7 @@ function useVaultUnlock(user: any, setVaultKey: any, setVaultItems: any) {
           setVaultKey(key);
           update('Loading items...');
           setVaultItems(items);
+          setTotalPages(listResult.total_pages ?? 1);
           setMasterPassword('');
         },
         'Vault unlocked',
@@ -151,8 +152,10 @@ export default function Dashboard() {
   const decryptingItemIds = useRef(new Set<string>());  // in-flight + completed fetches
   const currentSelectionRef = useRef<string | null>(null); // prevent overwrite on nav away
   const [hibp, setHibp] = useState<{ checking: boolean; count: number | null }>({ checking: false, count: null });
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
-  const { masterPassword, setMasterPassword, unlocking, signout, setSignout, unlockVault } = useVaultUnlock(user, setVaultKey, setVaultItems);
+  const { masterPassword, setMasterPassword, unlocking, signout, setSignout, unlockVault } = useVaultUnlock(user, setVaultKey, setVaultItems, setTotalPages);
 
   // Fetch full item (with encrypted_data) on demand and decrypt client-side.
   // Reads cryptoKey from the store directly (not from closure) to always have the latest key.
@@ -204,7 +207,7 @@ export default function Dashboard() {
     // Abort any in-flight search request immediately
     searchAbortRef.current?.abort();
 
-    if (!val) { setSearchResults(null); return; }
+    if (!val) { setSearchResults(null); setPage(1); return; }
 
     searchDebounceRef.current = setTimeout(async () => {
       const controller = new AbortController();
@@ -398,9 +401,19 @@ export default function Dashboard() {
     [searchResults, vaultItems, category],
   );
 
-  if (isVaultLocked) {
-    return <LockedVaultScreen user={user} masterPassword={masterPassword} setMasterPassword={setMasterPassword} unlocking={unlocking} signout={signout} setSignout={setSignout} unlockVault={unlockVault} handleLogout={handleLogout} />;
-  }
+  const handlePageChange = useCallback(async (newPage: number) => {
+    try {
+      const { data } = await vaultApi.list({ page: newPage, page_size: 100 });
+      setVaultItems(data.items);
+      setPage(newPage);
+      setTotalPages(data.total_pages ?? 1);
+      // Clear decrypt cache so the new page's items can be fetched fresh
+      decryptingItemIds.current.clear();
+      setSelectedItem(null);
+    } catch (err) {
+      console.error('[pagination] Failed to load page', newPage, err);
+    }
+  }, [setVaultItems]);
 
   if (sessionLoading) {
     return (
@@ -410,7 +423,11 @@ export default function Dashboard() {
     );
   }
 
-  return <MainDashboard user={user} category={category} setCategory={setCategory} searchValue={search} onSearchChange={handleSearchChange} handleExport={handleExport} lockVault={lockVault} handleLogout={handleLogout} vaultItems={vaultItems} selectedItem={selectedItem} handleSelectItem={handleSelectItem} selectedItemLoading={selectedItemLoading} handleToggleFav={handleToggleFav} handleOpenEdit={handleOpenEdit} handleDelete={handleDelete} deletingId={deletingId} copyToClipboard={copyToClipboard} hibp={hibp} setHibp={setHibp} showAddModal={showAddModal} setShowAddModal={setShowAddModal} newItem={newItem} setNewItem={setNewItem} savingItem={savingItem} genOptions={genOptions} handleAddItem={handleAddItem} showEditModal={showEditModal} setShowEditModal={setShowEditModal} editForm={editForm} setEditForm={setEditForm} updatingItem={updatingItem} handleEditItem={handleEditItem} filteredItems={filteredItems} />;
+  if (isVaultLocked) {
+    return <LockedVaultScreen user={user} masterPassword={masterPassword} setMasterPassword={setMasterPassword} unlocking={unlocking} signout={signout} setSignout={setSignout} unlockVault={unlockVault} handleLogout={handleLogout} />;
+  }
+
+  return <MainDashboard user={user} category={category} setCategory={setCategory} searchValue={search} onSearchChange={handleSearchChange} handleExport={handleExport} lockVault={lockVault} handleLogout={handleLogout} vaultItems={vaultItems} selectedItem={selectedItem} handleSelectItem={handleSelectItem} selectedItemLoading={selectedItemLoading} handleToggleFav={handleToggleFav} handleOpenEdit={handleOpenEdit} handleDelete={handleDelete} deletingId={deletingId} copyToClipboard={copyToClipboard} hibp={hibp} setHibp={setHibp} showAddModal={showAddModal} setShowAddModal={setShowAddModal} newItem={newItem} setNewItem={setNewItem} savingItem={savingItem} genOptions={genOptions} handleAddItem={handleAddItem} showEditModal={showEditModal} setShowEditModal={setShowEditModal} editForm={editForm} setEditForm={setEditForm} updatingItem={updatingItem} handleEditItem={handleEditItem} filteredItems={filteredItems} page={page} totalPages={totalPages} onPageChange={handlePageChange} isSearchActive={searchResults !== null} />;
 }
 
 function LockedVaultScreen({ user, masterPassword, setMasterPassword, unlocking, signout, setSignout, unlockVault, handleLogout }: Readonly<any>) {
@@ -507,8 +524,69 @@ function LockedVaultScreen({ user, masterPassword, setMasterPassword, unlocking,
   );
 }
 
+function Pagination({ page, totalPages, onPageChange }: Readonly<{ page: number; totalPages: number; onPageChange: (p: number) => void }>) {
+  if (totalPages <= 1) return null;
+  const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+  // Show at most 5 page buttons: always first, last, current ±1, and ellipsis
+  const visible = pages.filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1);
+  const withEllipsis: (number | '...')[] = [];
+  for (let i = 0; i < visible.length; i++) {
+    if (i > 0 && visible[i] - visible[i - 1] > 1) withEllipsis.push('...');
+    withEllipsis.push(visible[i]);
+  }
+  const btnBase: React.CSSProperties = {
+    minWidth: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)',
+    background: 'transparent', cursor: 'pointer', fontSize: '0.78rem',
+    fontFamily: 'Outfit, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    transition: 'all 0.15s',
+  };
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+      padding: '10px 8px', borderTop: '1px solid var(--border)', flexShrink: 0,
+    }}>
+      <button
+        style={{ ...btnBase, color: page === 1 ? 'var(--text-secondary)' : 'var(--text-primary)', opacity: page === 1 ? 0.35 : 1 }}
+        disabled={page === 1}
+        onClick={() => onPageChange(page - 1)}
+        aria-label="Previous page"
+      >
+        ‹
+      </button>
+      {withEllipsis.map((p, i) =>
+        p === '...' ? (
+          <span key={`ellipsis-before-${visible[i]}`} style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', padding: '0 2px' }}>…</span>
+        ) : (
+          <button
+            key={p}
+            style={{
+              ...btnBase,
+              background: p === page ? 'var(--accent-dim)' : 'transparent',
+              borderColor: p === page ? 'var(--accent)' : 'var(--border)',
+              color: p === page ? 'var(--accent)' : 'var(--text-secondary)',
+              fontWeight: p === page ? 600 : 400,
+            }}
+            onClick={() => onPageChange(p)}
+            aria-current={p === page ? 'page' : undefined}
+          >
+            {p}
+          </button>
+        )
+      )}
+      <button
+        style={{ ...btnBase, color: page === totalPages ? 'var(--text-secondary)' : 'var(--text-primary)', opacity: page === totalPages ? 0.35 : 1 }}
+        disabled={page === totalPages}
+        onClick={() => onPageChange(page + 1)}
+        aria-label="Next page"
+      >
+        ›
+      </button>
+    </div>
+  );
+}
+
 function MainDashboard(props: Readonly<any>) {
-  const { user, category, searchValue, onSearchChange, handleExport, lockVault, handleLogout, vaultItems, setShowAddModal, selectedItem, handleSelectItem, selectedItemLoading, handleToggleFav, handleOpenEdit, handleDelete, deletingId, copyToClipboard, hibp, setHibp, showAddModal, newItem, setNewItem, savingItem, genOptions, handleAddItem, showEditModal, setShowEditModal, editForm, setEditForm, updatingItem, handleEditItem, filteredItems } = props;
+  const { user, category, searchValue, onSearchChange, handleExport, lockVault, handleLogout, vaultItems, setShowAddModal, selectedItem, handleSelectItem, selectedItemLoading, handleToggleFav, handleOpenEdit, handleDelete, deletingId, copyToClipboard, hibp, setHibp, showAddModal, newItem, setNewItem, savingItem, genOptions, handleAddItem, showEditModal, setShowEditModal, editForm, setEditForm, updatingItem, handleEditItem, filteredItems, page, totalPages, onPageChange, isSearchActive } = props;
 
   // Mobile panel state: 'list' shows the item list, 'detail' shows the selected item
   const [mobilePanel, setMobilePanel] = useState<'list' | 'detail'>('list');
@@ -651,6 +729,9 @@ function MainDashboard(props: Readonly<any>) {
             );
           })}
         </div>
+        {/* Mobile pagination */}
+        {!isSearchActive && <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />}
+
         {/* Mobile bottom actions */}
         <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', display: 'flex', gap: 8, paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))' }}>
           <button onClick={handleExport} className="btn-ghost" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center', fontSize: '0.8rem' }}>
@@ -853,6 +934,9 @@ function MainDashboard(props: Readonly<any>) {
             );
           })}
         </div>
+
+        {/* Desktop pagination */}
+        {!isSearchActive && <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />}
       </div>
 
       <div className="desktop-detail-col" style={{ flex: 1, overflowY: 'auto', padding: '32px' }}>
