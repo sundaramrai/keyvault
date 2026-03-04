@@ -29,6 +29,9 @@
 
 html {
   scroll-behavior: smooth;
+  /* Prevent font size inflation on iOS landscape */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -38,6 +41,10 @@ body {
   font-weight: 300;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
+  /* Use dvh when available for mobile browsers with dynamic toolbars */
+  min-height: 100dvh;
+  /* Prevent horizontal overflow */
+  overflow-x: hidden;
 }
 
 body::before {
@@ -80,6 +87,7 @@ body::before {
   .glass {
     background: rgba(17, 16, 9, 0.8);
     backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--border);
   }
 
@@ -111,9 +119,12 @@ body::before {
     padding: 12px 16px;
     color: var(--text-primary);
     font-family: var(--font-body);
-    font-size: 0.9rem;
     transition: all 0.2s;
     outline: none;
+    /* Prevent zoom on iOS: ensure font-size >= 16px on mobile */
+    font-size: max(16px, 0.9rem);
+    /* Avoid double-tap delay on mobile */
+    touch-action: manipulation;
   }
 
   .input-field:focus {
@@ -137,6 +148,12 @@ body::before {
     font-size: 0.9rem;
     transition: all 0.2s;
     letter-spacing: 0.02em;
+    /* Minimum tap target size (WCAG / mobile HIG) */
+    min-height: 44px;
+    touch-action: manipulation;
+    /* Prevent text selection on double-tap */
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   .btn-primary:hover {
@@ -145,8 +162,17 @@ body::before {
     box-shadow: 0 8px 24px rgba(245, 158, 11, 0.3);
   }
 
+  /* Disable hover transform on touch devices to avoid stuck states */
+  @media (hover: none) {
+    .btn-primary:hover {
+      transform: none;
+      box-shadow: none;
+    }
+  }
+
   .btn-primary:active {
     transform: translateY(0);
+    background: #b45309;
   }
 
   .btn-ghost {
@@ -159,12 +185,31 @@ body::before {
     font-family: var(--font-body);
     font-size: 0.85rem;
     transition: all 0.2s;
+    /* Minimum tap target */
+    min-height: 44px;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   .btn-ghost:hover {
     color: var(--text-primary);
     border-color: var(--border-hover);
     background: var(--accent-dim);
+  }
+
+  @media (hover: none) {
+    .btn-ghost:hover {
+      color: var(--text-secondary);
+      border-color: var(--border);
+      background: transparent;
+    }
+
+    .btn-ghost:active {
+      color: var(--text-primary);
+      border-color: var(--border-hover);
+      background: var(--accent-dim);
+    }
   }
 }
 
@@ -177,5 +222,18 @@ body::before {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  html {
+    scroll-behavior: auto;
   }
 }
