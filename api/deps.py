@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 security = HTTPBearer(auto_error=False)
 
+
 def auth_exception() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -29,12 +30,14 @@ def auth_exception() -> HTTPException:
         headers={"WWW-Authenticate": "Bearer"},
     )
 
+
 class TokenUser:
     def __init__(self, user_id: str):
         try:
             self.id = uuid.UUID(user_id)
         except ValueError:
             raise auth_exception()
+
 
 def get_current_token_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
@@ -51,6 +54,7 @@ def get_current_token_user(
         return TokenUser(user_id)
     except JWTError:
         raise auth_exception()
+
 
 def get_current_user_from_db(
     token_user: Annotated[TokenUser, Depends(get_current_token_user)],
@@ -78,12 +82,12 @@ def get_current_user_from_db(
         # We don't have hashed_password in cache (intentionally stripped).
         # Routes that need to call verify_password() always hit DB directly (login).
         fake_user = User(
-            id=          token_user.id,
-            email=       cached.get("email", ""),
-            full_name=   cached.get("full_name"),
-            is_active=   cached.get("is_active", True),
-            master_hint= cached.get("master_hint"),
-            vault_salt=  cached.get("vault_salt", ""),
+            id=token_user.id,
+            email=cached.get("email", ""),
+            full_name=cached.get("full_name"),
+            is_active=cached.get("is_active", True),
+            master_hint=cached.get("master_hint"),
+            vault_salt=cached.get("vault_salt", ""),
         )
         # Parse created_at back to datetime for serialisation
         created_raw = cached.get("created_at")
@@ -104,16 +108,20 @@ def get_current_user_from_db(
         raise auth_exception()
 
     # Prime cache for next request
-    set_cached_user(user_id, {
-        "id":          user_id,
-        "email":       user.email,
-        "full_name":   user.full_name,
-        "is_active":   user.is_active,
-        "master_hint": user.master_hint,
-        "vault_salt":  user.vault_salt,
-        "created_at":  user.created_at.isoformat() if user.created_at else None,
-    })
+    set_cached_user(
+        user_id,
+        {
+            "id": user_id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "is_active": user.is_active,
+            "master_hint": user.master_hint,
+            "vault_salt": user.vault_salt,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+        },
+    )
     return user
+
 
 # Annotated shorthands for route dependencies — keeps route signatures clean and types correct.
 CurrentUser = Annotated[TokenUser, Depends(get_current_token_user)]
