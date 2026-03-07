@@ -54,6 +54,7 @@ def list_items(
         VaultItem.id,
         VaultItem.name,
         VaultItem.category,
+        VaultItem.encrypted_data,
         VaultItem.favicon_url,
         VaultItem.is_favourite,
         VaultItem.created_at,
