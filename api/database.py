@@ -1,8 +1,4 @@
-﻿"""
-database.py — Sync SQLAlchemy with PostgreSQL
-"""
-
-from sqlalchemy import (
+﻿from sqlalchemy import (
     create_engine,
     Column,
     String,
@@ -38,7 +34,6 @@ def _build_database_url() -> str:
 def _build_ssl_context():
     if "neon.tech" not in os.getenv("DATABASE_URL", ""):
         return None
-
     ctx = ssl.create_default_context(cafile=certifi.where())
     ctx.check_hostname = True
     ctx.verify_mode = ssl.CERT_REQUIRED
@@ -60,12 +55,8 @@ SessionLocal = sessionmaker(
 )
 
 
-# Base class for models
 class Base(DeclarativeBase):
     pass
-
-
-# Models
 
 
 class User(Base):
@@ -84,9 +75,9 @@ class User(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
-    # Master password hint (never the actual password)
+    # Password hint — never the actual password
     master_hint = Column(String(255), nullable=True)
-    # Salt for client-side key derivation
+    # Salt for client-side PBKDF2 key derivation
     vault_salt = Column(
         String(64), nullable=False, default=lambda: uuid.uuid4().hex + uuid.uuid4().hex
     )
@@ -97,12 +88,10 @@ class VaultItem(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    name = Column(String(255), nullable=False)  # site/app name (plaintext for search)
+    name = Column(String(255), nullable=False)
     category = Column(String(64), default="login")  # login, card, note, identity
     # All sensitive fields are AES-256-GCM encrypted client-side before storage
-    encrypted_data = Column(
-        Text, nullable=False
-    )  # JSON blob: {username, password, url, notes, ...}
+    encrypted_data = Column(Text, nullable=False)
     favicon_url = Column(String(512), nullable=True)
     is_favourite = Column(Boolean, default=False)
     created_at = Column(
@@ -115,7 +104,6 @@ class VaultItem(Base):
     )
 
     __table_args__ = (
-        # Covers: WHERE user_id = ? ORDER BY updated_at DESC
         Index("ix_vault_items_user_updated", "user_id", "updated_at"),
     )
 
@@ -138,7 +126,7 @@ class RefreshToken(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    token_hash = Column(String(255), nullable=False, unique=True)
+    token_hash = Column(String(255), nullable=False, unique=True, index=True)
     expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
     created_at = Column(
         TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -156,8 +144,8 @@ def get_db() -> Generator[Session, None, None]:
 
 def create_tables():
     Base.metadata.create_all(bind=engine)
-    # pg_trgm powers fast ILIKE '%term%' via GIN index
-    # Only runs in development; run the SQL below manually on Neon prod:
+    # pg_trgm enables fast ILIKE search via GIN index
+    # In production on Neon, run manually:
     #   CREATE EXTENSION IF NOT EXISTS pg_trgm;
     #   CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_vault_items_name_trgm
     #     ON vault_items USING gin (name gin_trgm_ops);
