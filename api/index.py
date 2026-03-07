@@ -1,6 +1,5 @@
 """
-api/index.py — FastAPI app for Vercel serverless deployment.
-Vercel's @vercel/python runtime supports ASGI natively — no Mangum needed.
+api/index.py — FastAPI app entry point.
 """
 
 import sys
@@ -21,12 +20,22 @@ from routes.vault import router as vault_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Dev: auto-create tables
     if os.getenv("ENVIRONMENT", "production") == "development":
         from database import create_tables
         try:
             create_tables()
         except Exception as e:
             print(f"Warning: Could not create tables: {e}")
+
+    # Verify Redis connection on startup
+    from cache import cache_ping, get_redis
+    if get_redis():
+        ok = cache_ping()
+        print(f"Redis cache: {'connected' if ok else 'ping failed — degraded mode'}")
+    else:
+        print("Redis cache: not configured (REDIS_URL missing) — all requests will hit DB")
+
     yield
 
 
@@ -68,4 +77,12 @@ app.include_router(vault_router, prefix="/api")
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "cipheria-api"}
+    from cache import cache_ping, get_redis
+    redis_ok = cache_ping() if get_redis() else None
+    if redis_ok:
+        cache_status = "connected"
+    elif redis_ok is None:
+        cache_status = "disabled"
+    else:
+        cache_status = "degraded"
+    return {"status": "ok", "service": "cipheria-api", "cache": cache_status,}
