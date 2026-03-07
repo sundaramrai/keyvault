@@ -6,12 +6,13 @@ from uuid import UUID
 
 def _validate_favicon_url(v: Optional[str]) -> Optional[str]:
     if v is not None:
-        if not (v.startswith('https://') or v.startswith('http://')):
-            raise ValueError('favicon_url must be a valid HTTP/S URL')
+        if not (v.startswith("https://") or v.startswith("http://")):
+            raise ValueError("favicon_url must be a valid HTTP/S URL")
     return v
 
 
 # Auth
+
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -19,11 +20,11 @@ class RegisterRequest(BaseModel):
     full_name: Optional[str] = Field(None, max_length=128)
     master_hint: Optional[str] = Field(None, max_length=256)
 
-    @field_validator('master_hint')
+    @field_validator("master_hint")
     @classmethod
     def hint_must_not_be_password(cls, v: Optional[str], info) -> Optional[str]:
-        if v and info.data.get('password') and v == info.data['password']:
-            raise ValueError('Master hint must not be the same as your password')
+        if v and info.data.get("password") and v == info.data["password"]:
+            raise ValueError("Master hint must not be the same as your password")
         return v
 
 
@@ -52,6 +53,7 @@ class UserResponse(BaseModel):
 
 # Vault Items
 
+
 class VaultItemCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     category: str = Field(default="login", pattern="^(login|card|note|identity)$")
@@ -59,7 +61,7 @@ class VaultItemCreate(BaseModel):
     favicon_url: Optional[str] = Field(None, max_length=512)
     is_favourite: bool = False
 
-    @field_validator('favicon_url')
+    @field_validator("favicon_url")
     @classmethod
     def validate_favicon_url(cls, v: Optional[str]) -> Optional[str]:
         return _validate_favicon_url(v)
@@ -72,7 +74,7 @@ class VaultItemUpdate(BaseModel):
     favicon_url: Optional[str] = Field(None, max_length=512)
     is_favourite: Optional[bool] = None
 
-    @field_validator('favicon_url')
+    @field_validator("favicon_url")
     @classmethod
     def validate_favicon_url(cls, v: Optional[str]) -> Optional[str]:
         return _validate_favicon_url(v)
@@ -80,6 +82,7 @@ class VaultItemUpdate(BaseModel):
 
 class VaultItemSummary(BaseModel):
     """Metadata-only response — no encrypted_data. Used by the list endpoint."""
+
     id: UUID
     name: str
     category: str
@@ -94,6 +97,7 @@ class VaultItemSummary(BaseModel):
 
 class VaultItemResponse(BaseModel):
     """Full response including encrypted_data. Used by create, update and detail endpoints."""
+
     id: UUID
     name: str
     category: str
@@ -109,6 +113,7 @@ class VaultItemResponse(BaseModel):
 
 class PaginatedVaultResponse(BaseModel):
     """Paginated wrapper for vault list endpoint."""
+
     items: List[VaultItemResponse]
     total: int
     page: int
