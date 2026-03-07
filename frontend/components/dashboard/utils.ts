@@ -13,18 +13,22 @@ export const tryGetFaviconUrl = (url: string): string | undefined => {
 };
 
 export const fetchAndDecryptItem = async (item: VaultItem): Promise<VaultItem> => {
-    const { data } = await vaultApi.get(item.id);
-    if (!data.encrypted_data?.includes('.')) throw new Error('BAD_FORMAT');
+    let encryptedData = item.encrypted_data;
+    if (!encryptedData) {
+        const { data } = await vaultApi.get(item.id);
+        encryptedData = data.encrypted_data;
+    }
+    if (!encryptedData?.includes('.')) throw new Error('BAD_FORMAT');
     const { cryptoKey: key } = useAuthStore.getState();
     if (!key) throw new Error('NO_KEY');
     let dec: any;
     try {
-        dec = await decryptData(data.encrypted_data, key);
+        dec = await decryptData(encryptedData, key);
     } catch (cryptoErr) {
         console.error('[decrypt] WebCrypto error for item', item.id, cryptoErr);
         throw new Error('CRYPTO_FAIL');
     }
-    const enriched: VaultItem = { ...item, encrypted_data: data.encrypted_data, decrypted: dec };
+    const enriched: VaultItem = { ...item, encrypted_data: encryptedData, decrypted: dec };
     useAuthStore.getState().updateVaultItem(item.id, enriched);
     return enriched;
 };
