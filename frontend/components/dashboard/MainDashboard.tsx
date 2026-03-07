@@ -2,6 +2,26 @@
 import React, { useState } from 'react';
 import { Search, Plus, Shield, Globe, CreditCard, StickyNote, User, Trash2, Download, Star, Edit2, ChevronRight } from 'lucide-react';
 import { checkHIBP } from '@/lib/crypto';
+
+function SearchSkeleton({ iconSize = 36 }: Readonly<{ iconSize?: number }>) {
+    return (
+        <>
+            {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="search-skeleton-item" style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '12px', borderRadius: 10, marginBottom: 2,
+                    animationDelay: `${i * 0.08}s`,
+                }}>
+                    <div style={{ width: iconSize, height: iconSize, borderRadius: 8, background: 'rgba(255,255,255,0.07)', flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                        <div style={{ height: 13, width: '55%', borderRadius: 6, background: 'rgba(255,255,255,0.07)', marginBottom: 7 }} />
+                        <div style={{ height: 11, width: '38%', borderRadius: 6, background: 'rgba(255,255,255,0.05)' }} />
+                    </div>
+                </div>
+            ))}
+        </>
+    );
+}
 import { Category, CATEGORY_ICONS } from './types';
 import { DesktopSidebar, MobileTopBar } from './Sidebar';
 import { Pagination } from './Pagination';
@@ -45,6 +65,103 @@ function ItemDetailFields({ selectedItem, copyToClipboard, hibp, setHibp }: Read
     );
 }
 
+function MobileItemList({ searchLoading, filteredItems, handleSelectItemMobile }: Readonly<{
+    searchLoading: boolean;
+    filteredItems: any[];
+    handleSelectItemMobile: (item: any) => void;
+}>) {
+    if (searchLoading) return <SearchSkeleton iconSize={40} />;
+    if (filteredItems.length === 0) {
+        return (
+            <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)' }}>
+                <Shield size={32} style={{ opacity: 0.3, margin: '0 auto 12px' }} />
+                <p style={{ fontSize: '0.875rem' }}>No items found</p>
+            </div>
+        );
+    }
+    return (
+        <>
+            {filteredItems.map((item: any) => {
+                const Icon = CATEGORY_ICONS[item.category] || Globe;
+                return (
+                    <button key={item.id} onClick={() => handleSelectItemMobile(item)} style={{
+                        width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                        padding: '14px 12px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                        background: 'transparent', borderLeft: '2px solid transparent',
+                        transition: 'all 0.15s', marginBottom: 2,
+                    }}>
+                        <div style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0, background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                            {item.favicon_url
+                                ? <img src={item.favicon_url} alt="" width={22} height={22} onError={(e: any) => e.target.style.display = 'none'} />
+                                : <Icon size={18} color="var(--text-secondary)" />}
+                        </div>
+                        <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
+                            <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</p>
+                            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {item.decrypted?.username || item.decrypted?.url || item.category}
+                            </p>
+                        </div>
+                        {item.is_favourite && <Star size={14} color="var(--accent)" fill="var(--accent)" />}
+                        <ChevronRight size={16} color="var(--text-secondary)" style={{ opacity: 0.4 }} />
+                    </button>
+                );
+            })}
+        </>
+    );
+}
+
+function DesktopItemList({ searchLoading, filteredItems, selectedItem, handleSelectItem }: Readonly<{
+    searchLoading: boolean;
+    filteredItems: any[];
+    selectedItem: any;
+    handleSelectItem: (item: any) => void;
+}>) {
+    if (searchLoading) return <SearchSkeleton />;
+    if (filteredItems.length === 0) {
+        return (
+            <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)' }}>
+                <Shield size={32} style={{ opacity: 0.3, margin: '0 auto 12px' }} />
+                <p style={{ fontSize: '0.875rem' }}>No items found</p>
+            </div>
+        );
+    }
+    return (
+        <>
+            {filteredItems.map((item: any) => {
+                const Icon = CATEGORY_ICONS[item.category] || Globe;
+                return (
+                    <button key={item.id} onClick={() => handleSelectItem(item)} style={{
+                        width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                        padding: '12px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                        background: selectedItem?.id === item.id ? 'var(--accent-dim)' : 'transparent',
+                        borderLeft: selectedItem?.id === item.id ? '2px solid var(--accent)' : '2px solid transparent',
+                        transition: 'all 0.15s', marginBottom: 2,
+                    }}>
+                        <div style={{
+                            width: 36, height: 36, borderRadius: 8, flexShrink: 0,
+                            background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            overflow: 'hidden',
+                        }}>
+                            {item.favicon_url ? (
+                                <img src={item.favicon_url} alt="" width={20} height={20} onError={(e: any) => e.target.style.display = 'none'} />
+                            ) : <Icon size={16} color="var(--text-secondary)" />}
+                        </div>
+                        <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
+                            <p style={{ fontSize: '0.875rem', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {item.name}
+                            </p>
+                            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {item.decrypted?.username || item.decrypted?.url || item.category}
+                            </p>
+                        </div>
+                        {item.is_favourite && <Star size={12} color="var(--accent)" fill="var(--accent)" />}
+                    </button>
+                );
+            })}
+        </>
+    );
+}
+
 export function MainDashboard(props: Readonly<any>) {
     const {
         user, category, searchValue, onSearchChange, handleExport, lockVault, handleLogout,
@@ -52,7 +169,7 @@ export function MainDashboard(props: Readonly<any>) {
         handleToggleFav, handleOpenEdit, handleDelete, deletingId, copyToClipboard,
         hibp, setHibp, showAddModal, newItem, setNewItem, savingItem, genOptions, handleAddItem,
         showEditModal, setShowEditModal, editForm, setEditForm, updatingItem, handleEditItem,
-        filteredItems, page, totalPages, onPageChange, isSearchActive,
+        filteredItems, page, totalPages, onPageChange, isSearchActive, searchLoading,
     } = props;
 
     const [mobilePanel, setMobilePanel] = useState<'list' | 'detail'>('list');
@@ -83,6 +200,11 @@ export function MainDashboard(props: Readonly<any>) {
           .desktop-list-col { display: flex !important; }
           .desktop-detail-col { display: block !important; }
         }
+        @keyframes shimmer {
+          0%, 100% { opacity: 0.45; }
+          50% { opacity: 0.85; }
+        }
+        .search-skeleton-item { animation: shimmer 1.3s ease-in-out infinite; }
       `}</style>
 
             {/* Mobile: List panel */}
@@ -134,36 +256,11 @@ export function MainDashboard(props: Readonly<any>) {
 
                 {/* Items list */}
                 <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
-                    {filteredItems.length === 0 ? (
-                        <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)' }}>
-                            <Shield size={32} style={{ opacity: 0.3, margin: '0 auto 12px' }} />
-                            <p style={{ fontSize: '0.875rem' }}>No items found</p>
-                        </div>
-                    ) : filteredItems.map((item: any) => {
-                        const Icon = CATEGORY_ICONS[item.category] || Globe;
-                        return (
-                            <button key={item.id} onClick={() => handleSelectItemMobile(item)} style={{
-                                width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                                padding: '14px 12px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                                background: 'transparent', borderLeft: '2px solid transparent',
-                                transition: 'all 0.15s', marginBottom: 2,
-                            }}>
-                                <div style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0, background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                                    {item.favicon_url
-                                        ? <img src={item.favicon_url} alt="" width={22} height={22} onError={(e: any) => e.target.style.display = 'none'} />
-                                        : <Icon size={18} color="var(--text-secondary)" />}
-                                </div>
-                                <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
-                                    <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</p>
-                                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {item.decrypted?.username || item.decrypted?.url || item.category}
-                                    </p>
-                                </div>
-                                {item.is_favourite && <Star size={14} color="var(--accent)" fill="var(--accent)" />}
-                                <ChevronRight size={16} color="var(--text-secondary)" style={{ opacity: 0.4 }} />
-                            </button>
-                        );
-                    })}
+                    <MobileItemList
+                        searchLoading={searchLoading}
+                        filteredItems={filteredItems}
+                        handleSelectItemMobile={handleSelectItemMobile}
+                    />
                 </div>
 
                 {!isSearchActive && <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />}
@@ -269,42 +366,12 @@ export function MainDashboard(props: Readonly<any>) {
                 </div>
 
                 <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
-                    {filteredItems.length === 0 ? (
-                        <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)' }}>
-                            <Shield size={32} style={{ opacity: 0.3, margin: '0 auto 12px' }} />
-                            <p style={{ fontSize: '0.875rem' }}>No items found</p>
-                        </div>
-                    ) : filteredItems.map((item: any) => {
-                        const Icon = CATEGORY_ICONS[item.category] || Globe;
-                        return (
-                            <button key={item.id} onClick={() => handleSelectItem(item)} style={{
-                                width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                                padding: '12px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                                background: selectedItem?.id === item.id ? 'var(--accent-dim)' : 'transparent',
-                                borderLeft: selectedItem?.id === item.id ? '2px solid var(--accent)' : '2px solid transparent',
-                                transition: 'all 0.15s', marginBottom: 2,
-                            }}>
-                                <div style={{
-                                    width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-                                    background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    overflow: 'hidden',
-                                }}>
-                                    {item.favicon_url ? (
-                                        <img src={item.favicon_url} alt="" width={20} height={20} onError={(e: any) => e.target.style.display = 'none'} />
-                                    ) : <Icon size={16} color="var(--text-secondary)" />}
-                                </div>
-                                <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
-                                    <p style={{ fontSize: '0.875rem', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {item.name}
-                                    </p>
-                                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {item.decrypted?.username || item.decrypted?.url || item.category}
-                                    </p>
-                                </div>
-                                {item.is_favourite && <Star size={12} color="var(--accent)" fill="var(--accent)" />}
-                            </button>
-                        );
-                    })}
+                    <DesktopItemList
+                        searchLoading={searchLoading}
+                        filteredItems={filteredItems}
+                        selectedItem={selectedItem}
+                        handleSelectItem={handleSelectItem}
+                    />
                 </div>
 
                 {!isSearchActive && <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />}
