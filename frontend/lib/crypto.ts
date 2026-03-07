@@ -101,7 +101,11 @@ export function generatePassword(options: {
 }
 
 // HIBP Pwned Passwords — k-anonymity model (SHA-1 prefix, never sends full hash)
+// In-memory cache: avoids re-fetching for the same password within a session
+const _hibpCache = new Map<string, number>();
+
 export async function checkHIBP(password: string): Promise<number> {
+  if (_hibpCache.has(password)) return _hibpCache.get(password)!;
   const encoded = new TextEncoder().encode(password);
   const hashBuffer = await crypto.subtle.digest('SHA-1', encoded);
   const hashHex = Array.from(new Uint8Array(hashBuffer))
@@ -118,8 +122,9 @@ export async function checkHIBP(password: string): Promise<number> {
 
   const text = await response.text();
   const line = text.split('\n').find((l) => l.trimStart().startsWith(suffix));
-  if (!line) return 0;
-  return Number.parseInt(line.split(':')[1], 10);
+  const count = line ? Number.parseInt(line.split(':')[1], 10) : 0;
+  _hibpCache.set(password, count);
+  return count;
 }
 
 // Password Strength
