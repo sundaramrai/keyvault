@@ -277,8 +277,9 @@ export default function Dashboard() {
   };
 
   const buildEncryptedPayload = async (form: typeof emptyForm) => {
+    if (!cryptoKey) throw new Error('Crypto key not available');
     const payload = buildPayload(form);
-    const encrypted_data = await encryptData(payload, cryptoKey!);
+    const encrypted_data = await encryptData(payload, cryptoKey);
     return { payload, encrypted_data };
   };
 
