@@ -29,20 +29,23 @@ import redis
 logger = logging.getLogger(__name__)
 
 # TTLs (seconds)
-TTL_USER_PROFILE   = 15 * 60        # 15 min
-TTL_VAULT_LIST     = 5  * 60        # 5 min
-TTL_VAULT_ITEM     = 10 * 60        # 10 min
-TTL_VAULT_SALT     = 60 * 60        # 60 min
-TTL_RT_VALID       = 30 * 24 * 3600 # 30 days (matches refresh token lifetime)
-TTL_TOKEN_BLACKLIST = 31 * 24 * 3600 # 31 days safety margin
+TTL_USER_PROFILE = 15 * 60  # 15 min
+TTL_VAULT_LIST = 5 * 60  # 5 min
+TTL_VAULT_ITEM = 10 * 60  # 10 min
+TTL_VAULT_SALT = 60 * 60  # 60 min
+TTL_RT_VALID = 30 * 24 * 3600  # 30 days (matches refresh token lifetime)
+TTL_TOKEN_BLACKLIST = 31 * 24 * 3600  # 31 days safety margin
 
 
 # Connection
 
+
 def _build_redis_client() -> Optional[redis.Redis]:
     url = os.getenv("REDIS_URL")
     if not url:
-        logger.warning("REDIS_URL not set — caching disabled, falling back to DB for every request.")
+        logger.warning(
+            "REDIS_URL not set — caching disabled, falling back to DB for every request."
+        )
         return None
     try:
         client = redis.from_url(
@@ -70,6 +73,7 @@ def get_redis() -> Optional[redis.Redis]:
 
 
 # Low-level helpers
+
 
 def _get(key: str) -> Optional[Any]:
     if _redis is None:
@@ -118,14 +122,22 @@ def _delete_pattern(pattern: str) -> None:
 
 # Key builders
 
-def _vault_list_key(user_id: str, category: Optional[str], search: Optional[str],
-                    favourites_only: bool, page: int, page_size: int) -> str:
+
+def _vault_list_key(
+    user_id: str,
+    category: Optional[str],
+    search: Optional[str],
+    favourites_only: bool,
+    page: int,
+    page_size: int,
+) -> str:
     params = f"{category}:{search}:{favourites_only}:{page}:{page_size}"
     params_hash = hashlib.md5(params.encode()).hexdigest()[:12]
     return f"vault:list:{user_id}:{params_hash}"
 
 
 # User profile cache
+
 
 def get_cached_user(user_id: str) -> Optional[dict]:
     """Return cached user profile dict (no hashed_password)."""
@@ -146,6 +158,7 @@ def invalidate_user(user_id: str) -> None:
 # Vault salt cache
 # vault_salt is returned on every login/refresh — cache it to avoid a DB hit.
 
+
 def get_cached_vault_salt(user_id: str) -> Optional[str]:
     data = _get(f"vault_salt:{user_id}")
     return data.get("salt") if data else None
@@ -157,14 +170,28 @@ def set_cached_vault_salt(user_id: str, salt: str) -> None:
 
 # Vault list cache
 
-def get_cached_vault_list(user_id: str, category: Optional[str], search: Optional[str],
-                          favourites_only: bool, page: int, page_size: int) -> Optional[dict]:
+
+def get_cached_vault_list(
+    user_id: str,
+    category: Optional[str],
+    search: Optional[str],
+    favourites_only: bool,
+    page: int,
+    page_size: int,
+) -> Optional[dict]:
     key = _vault_list_key(user_id, category, search, favourites_only, page, page_size)
     return _get(key)
 
 
-def set_cached_vault_list(user_id: str, category: Optional[str], search: Optional[str],
-                          favourites_only: bool, page: int, page_size: int, data: dict) -> None:
+def set_cached_vault_list(
+    user_id: str,
+    category: Optional[str],
+    search: Optional[str],
+    favourites_only: bool,
+    page: int,
+    page_size: int,
+    data: dict,
+) -> None:
     key = _vault_list_key(user_id, category, search, favourites_only, page, page_size)
     _set(key, data, TTL_VAULT_LIST)
 
@@ -175,6 +202,7 @@ def invalidate_vault_list(user_id: str) -> None:
 
 
 # Vault item cache
+
 
 def get_cached_vault_item(user_id: str, item_id: str) -> Optional[dict]:
     return _get(f"vault:item:{user_id}:{item_id}")
@@ -197,6 +225,7 @@ def invalidate_all_vault(user_id: str) -> None:
 # Refresh token fast-path
 # We cache "is this token valid" so the /refresh endpoint avoids a DB lookup
 # on the hot path. A revoked JTI is written to the blacklist immediately.
+
 
 def cache_refresh_token_valid(token_hash: str, user_id: str, ttl_seconds: int) -> None:
     """Mark a refresh token hash as valid in cache."""
@@ -227,6 +256,7 @@ def is_token_blacklisted(jti: str) -> bool:
 # The salt is NOT secret (it's public per PBKDF2 design) but we still
 # scope it per-user and keep TTL short.
 
+
 def get_vault_salt_for_unlock(user_id: str) -> Optional[str]:
     """Fast path for vault unlock — returns salt without hitting DB."""
     return get_cached_vault_salt(user_id)
@@ -238,6 +268,7 @@ def prime_vault_salt(user_id: str, salt: str) -> None:
 
 
 # Cache health
+
 
 def cache_ping() -> bool:
     if _redis is None:
