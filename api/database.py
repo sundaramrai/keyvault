@@ -2,7 +2,16 @@
 database.py — Sync SQLAlchemy with PostgreSQL
 """
 
-from sqlalchemy import create_engine, Column, String, Text, Boolean, Integer, Index, text
+from sqlalchemy import (
+    create_engine,
+    Column,
+    String,
+    Text,
+    Boolean,
+    Integer,
+    Index,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 from sqlalchemy.types import TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID
@@ -23,7 +32,7 @@ load_dotenv()
 
 def _build_database_url() -> str:
     url = os.getenv("DATABASE_URL", "")
-    return re.sub(r'^postgres(ql)?://', 'postgresql+psycopg://', url)
+    return re.sub(r"^postgres(ql)?://", "postgresql+psycopg://", url)
 
 
 def _build_ssl_context():
@@ -46,13 +55,18 @@ engine = create_engine(
     echo=False,
 )
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
+SessionLocal = sessionmaker(
+    autocommit=False, autoflush=False, bind=engine, expire_on_commit=False
+)
+
 
 # Base class for models
 class Base(DeclarativeBase):
     pass
 
+
 # Models
+
 
 class User(Base):
     __tablename__ = "users"
@@ -62,12 +76,20 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at = Column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
     # Master password hint (never the actual password)
     master_hint = Column(String(255), nullable=True)
     # Salt for client-side key derivation
-    vault_salt = Column(String(64), nullable=False, default=lambda: uuid.uuid4().hex + uuid.uuid4().hex)
+    vault_salt = Column(
+        String(64), nullable=False, default=lambda: uuid.uuid4().hex + uuid.uuid4().hex
+    )
 
 
 class VaultItem(Base):
@@ -75,18 +97,26 @@ class VaultItem(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    name = Column(String(255), nullable=False)           # site/app name (plaintext for search)
-    category = Column(String(64), default="login")       # login, card, note, identity
+    name = Column(String(255), nullable=False)  # site/app name (plaintext for search)
+    category = Column(String(64), default="login")  # login, card, note, identity
     # All sensitive fields are AES-256-GCM encrypted client-side before storage
-    encrypted_data = Column(Text, nullable=False)        # JSON blob: {username, password, url, notes, ...}
+    encrypted_data = Column(
+        Text, nullable=False
+    )  # JSON blob: {username, password, url, notes, ...}
     favicon_url = Column(String(512), nullable=True)
     is_favourite = Column(Boolean, default=False)
-    created_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at = Column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
     __table_args__ = (
         # Covers: WHERE user_id = ? ORDER BY updated_at DESC
-        Index('ix_vault_items_user_updated', 'user_id', 'updated_at'),
+        Index("ix_vault_items_user_updated", "user_id", "updated_at"),
     )
 
 
@@ -98,7 +128,9 @@ class AuditLog(Base):
     action = Column(String(64), nullable=False)
     ip_address = Column(String(64), nullable=True)
     user_agent = Column(String(512), nullable=True)
-    created_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = Column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
 
 
 class RefreshToken(Base):
@@ -108,7 +140,9 @@ class RefreshToken(Base):
     user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     token_hash = Column(String(255), nullable=False, unique=True)
     expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
-    created_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = Column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
     revoked = Column(Boolean, default=False)
 
 
@@ -130,10 +164,12 @@ def create_tables():
     try:
         with engine.connect() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
-            conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS ix_vault_items_name_trgm "
-                "ON vault_items USING gin (name gin_trgm_ops)"
-            ))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_vault_items_name_trgm "
+                    "ON vault_items USING gin (name gin_trgm_ops)"
+                )
+            )
             conn.commit()
     except Exception as e:
         print(f"Warning: Could not create pg_trgm index: {e}")
