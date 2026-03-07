@@ -28,6 +28,7 @@ function useVaultUnlock(
   setVaultKey: (k: CryptoKey) => void,
   setVaultItems: (items: VaultItem[]) => void,
   setTotalPages: (n: number) => void,
+  setTotalItems: (n: number) => void,
 ) {
   const [masterPassword, setMasterPassword] = useState('');
   const [unlocking, setUnlocking] = useState(false);
@@ -69,6 +70,7 @@ function useVaultUnlock(
           );
           setVaultItems(decryptedItems);
           setTotalPages(listResult.total_pages ?? 1);
+          setTotalItems(listResult.total ?? 0);
           setMasterPassword('');
         },
         'Vault unlocked',
@@ -112,13 +114,14 @@ export default function Dashboard() {
   const [hibp, setHibp] = useState<{ checking: boolean; count: number | null }>({ checking: false, count: null });
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState<number | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
   const decryptingItemIds = useRef(new Set<string>());
   const currentSelectionRef = useRef<string | null>(null);
   const { masterPassword, setMasterPassword, unlocking, signout, setSignout, unlockVault } =
-    useVaultUnlock(user, setVaultKey, setVaultItems, setTotalPages);
+    useVaultUnlock(user, setVaultKey, setVaultItems, setTotalPages, setTotalItems);
 
   // # session restore
   useEffect(() => {
@@ -195,6 +198,8 @@ export default function Dashboard() {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     searchAbortRef.current?.abort();
     if (!val) { setSearchResults(null); setSearchLoading(false); setPage(1); return; }
+    // Skip API call if the vault is known to have no items at all
+    if (totalItems === 0) { setSearchResults([]); return; }
     searchDebounceRef.current = setTimeout(async () => {
       setSearchLoading(true);
       const controller = new AbortController();
@@ -360,6 +365,7 @@ export default function Dashboard() {
       setVaultItems(decryptedItems);
       setPage(newPage);
       setTotalPages(data.total_pages ?? 1);
+      setTotalItems(data.total ?? 0);
       decryptingItemIds.current.clear();
       setSelectedItem(null);
     } catch (err) {
