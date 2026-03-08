@@ -317,12 +317,18 @@ export default function Dashboard() {
   };
 
   const handleToggleFav = async (item: VaultItem) => {
-    try {
-      await vaultApi.update(item.id, { is_favourite: !item.is_favourite });
-      const updated = { ...item, is_favourite: !item.is_favourite };
-      updateVaultItem(item.id, updated);
-      if (selectedItem?.id === item.id) setSelectedItem(updated);
-    } catch { }
+    const adding = !item.is_favourite;
+    await toastService.withProgress(
+      adding ? 'Adding to favourites...' : 'Removing from favourites...',
+      async () => {
+        await vaultApi.update(item.id, { is_favourite: adding });
+        const updated = { ...item, is_favourite: adding };
+        updateVaultItem(item.id, updated);
+        if (selectedItem?.id === item.id) setSelectedItem(updated);
+      },
+      adding ? 'Added to favourites' : 'Removed from favourites',
+      { fallbackError: 'Failed to update favourite' },
+    );
   };
 
   const copyToClipboard = (text: string, label: string) => {
