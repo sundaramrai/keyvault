@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { authApi, setAccessToken, getAccessToken } from '@/lib/api';
+import type { VaultItem } from '@/lib/types';
 
 interface User {
   id: string;
@@ -7,36 +8,6 @@ interface User {
   full_name?: string;
   vault_salt: string;
   master_hint?: string;
-}
-
-export interface VaultItem {
-  id: string;
-  name: string;
-  category: string;
-  encrypted_data?: string;  // Only present after fetching the detail endpoint
-  favicon_url?: string;
-  is_favourite: boolean;
-  created_at: string;
-  updated_at: string;
-  // Decrypted fields (populated client-side)
-  decrypted?: {
-    // login
-    username?: string;
-    password?: string;
-    url?: string;
-    // card
-    cardNumber?: string;
-    cardHolder?: string;
-    expiry?: string;
-    cvv?: string;
-    // identity
-    firstName?: string;
-    lastName?: string;
-    phone?: string;
-    address?: string;
-    // shared
-    notes?: string;
-  };
 }
 
 interface AuthStore {
@@ -64,6 +35,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
   vaultItems: [],
   isVaultLocked: true,
 
+  /**
+   * setAuth is the single source of truth for storing the access token.
+   * Callers must NOT call setAccessToken separately before invoking this.
+   */
   setAuth: (user, accessToken) => {
     setAccessToken(accessToken);
     set({ user, isAuthenticated: true });
@@ -87,8 +62,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
   lockVault: () => set({ cryptoKey: null, isVaultLocked: true, vaultItems: [] }),
 
   restoreSession: (() => {
-    // Shared promise — prevents concurrent callers (StrictMode, multi-page mounts)
-    // from each firing their own refresh + /me pair.
+    /**
+     * Shared promise — prevents concurrent callers (StrictMode, multi-page mounts)
+     * from each firing their own refresh + /me pair.
+     */
     let _pending: Promise<boolean> | null = null;
 
     return () => {
@@ -97,10 +74,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
         try {
           let token = getAccessToken();
           if (!token) {
-            // Cookie is sent automatically — no localStorage needed
+            // HttpOnly cookie sent automatically — no localStorage needed
             const { data: refreshData } = await authApi.refresh();
-            token = refreshData.access_token;
-            setAccessToken(token as string);
+            token = refreshData.access_token as string;
+            setAccessToken(token);
           }
           const { data: user } = await authApi.me();
           set({ user, isAuthenticated: true });
