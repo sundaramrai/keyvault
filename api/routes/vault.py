@@ -4,9 +4,10 @@ routes/vault.py — Vault CRUD with Redis caching and ETag support.
 
 import hashlib
 import logging
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db, VaultItem, AuditLog
@@ -34,6 +35,7 @@ router = APIRouter(prefix="/vault", tags=["vault"])
 
 ITEM_NOT_FOUND_MSG = "Item not found"
 MAX_PAGE_SIZE = 100
+VAULT_ITEM_LIMIT = 1000
 
 
 def _item_to_dict(item) -> dict:
@@ -82,6 +84,16 @@ def _log_action(db: Session, user_id, action: str, request: Request) -> None:
     )
 
 
+def _sanitise_search(search: str) -> str:
+    """Strip LIKE metacharacters to prevent pattern-based ReDoS via ILIKE.
+
+    PostgreSQL's ILIKE treats % (any sequence), _ (any single char), and \
+    (escape) as special. Removing them is safe — users searching for a name
+    don't need regex-style wildcards.
+    """
+    return search.replace("\\", "").replace("%", "").replace("_", "")
+
+
 # Export — always hits DB, no cache, strictly rate-limited, audited
 
 @router.get("/export/json")
@@ -124,7 +136,8 @@ def list_items(
     response: Response,
     db: Annotated[Session, Depends(get_db)],
     current_user: CurrentUser,
-    category: Annotated[Optional[str], Query()] = None,
+    # Literal enum — rejects any value not in the allowed set at the query-param level
+    category: Annotated[Optional[Literal["login", "card", "note", "identity"]], Query()] = None,
     search: Annotated[Optional[str], Query(max_length=128)] = None,
     favourites_only: Annotated[bool, Query()] = False,
     page: Annotated[int, Query(ge=1)] = 1,
@@ -132,10 +145,14 @@ def list_items(
 ):
     user_id = str(current_user.id)
 
+    # Sanitise search before use — strips LIKE metacharacters (%, _, \)
+    # to prevent ReDoS via pathological ILIKE patterns
+    clean_search = _sanitise_search(search) if search else None
+
     # Skip caching for search queries (low repetition, unpredictable key space)
-    if not search:
+    if not clean_search:
         cached = get_cached_vault_list(
-            user_id, category, search, favourites_only, page, page_size
+            user_id, category, clean_search, favourites_only, page, page_size
         )
         if cached is not None:
             logger.debug(f"vault:list cache HIT user={user_id}")
@@ -161,8 +178,8 @@ def list_items(
 
     if category:
         q = q.filter(VaultItem.category == category)
-    if search:
-        q = q.filter(VaultItem.name.ilike(f"%{search}%"))
+    if clean_search:
+        q = q.filter(VaultItem.name.ilike(f"%{clean_search}%"))
     if favourites_only:
         q = q.filter(VaultItem.is_favourite.is_(True))
 
@@ -183,9 +200,9 @@ def list_items(
         "total_pages": -(-total // page_size),
     }
 
-    if not search:
+    if not clean_search:
         set_cached_vault_list(
-            user_id, category, search, favourites_only, page, page_size, result
+            user_id, category, clean_search, favourites_only, page, page_size, result
         )
         etag = _make_etag(result)
         response.headers["ETag"] = etag
@@ -227,15 +244,31 @@ def get_item(
     return data
 
 
-# Create — invalidates list cache, primes item cache
+# Create — enforces per-user cap, invalidates list cache, primes item cache
 
-@router.post("", response_model=VaultItemResponse, status_code=201)
+@router.post("", response_model=VaultItemResponse, status_code=201,
+    responses={
+        400: {"description": f"Vault item limit of {VAULT_ITEM_LIMIT} reached"},
+    },
+)
 def create_item(
     body: VaultItemCreate,
     db: Annotated[Session, Depends(get_db)],
     current_user: CurrentUser,
 ):
     user_id = str(current_user.id)
+
+    # Enforce per-user vault item limit to prevent DB storage abuse
+    count = (
+        db.query(func.count(VaultItem.id))
+        .filter(VaultItem.user_id == current_user.id)
+        .scalar()
+    )
+    if count >= VAULT_ITEM_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Vault item limit of {VAULT_ITEM_LIMIT} reached",
+        )
 
     item = VaultItem(
         user_id=current_user.id,
