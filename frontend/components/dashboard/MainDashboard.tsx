@@ -2,7 +2,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { Search, Plus, Shield, Globe, CreditCard, StickyNote, User, Trash2, Download, Star, Edit2, ChevronRight } from 'lucide-react';
 import { checkHIBP } from '@/lib/crypto';
-import { Category, CATEGORY_ICONS } from './types';
+import { CATEGORY_ICONS } from './types';
 import { DesktopSidebar, MobileTopBar } from './Sidebar';
 import { Pagination } from './Pagination';
 import { Field, HibpCheck } from './Field';
@@ -53,6 +53,39 @@ function ItemIcon({ item, size }: Readonly<{ item: any; size: number }>) {
     );
 }
 
+function ItemButton({ item, isSelected, isMobile, iconSize, fontSize, padding, onSelect }: Readonly<{
+    item: any; isSelected: boolean; isMobile: boolean;
+    iconSize: number; fontSize: string; padding: string;
+    onSelect: (item: any) => void;
+}>) {
+    const handleClick = useCallback(() => onSelect(item), [onSelect, item]);
+    return (
+        <button onClick={handleClick} style={{
+            width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+            borderRadius: 10, border: 'none', cursor: 'pointer', marginBottom: 2,
+            background: isSelected ? 'var(--accent-dim)' : 'transparent',
+            borderLeft: isSelected ? '2px solid var(--accent)' : '2px solid transparent',
+            transition: 'all 0.15s', padding,
+        }}>
+            <ItemIcon item={item} size={iconSize} />
+            <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
+                <p style={{ fontSize, color: 'var(--text-primary)', fontWeight: 500, ...ELLIPSIS_STYLE }}>
+                    {item.name}
+                </p>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', ...ELLIPSIS_STYLE }}>
+                    {item.decrypted?.username || item.decrypted?.url || item.category}
+                </p>
+            </div>
+            {item.is_favourite && (
+                <Star size={isMobile ? 14 : 12} color="var(--accent)" fill="var(--accent)" />
+            )}
+            {isMobile && (
+                <ChevronRight size={16} color="var(--text-secondary)" style={{ opacity: 0.4 }} />
+            )}
+        </button>
+    );
+}
+
 function ItemList({ items, loading, selectedId, onSelect, variant }: Readonly<{
     items: any[];
     loading: boolean;
@@ -75,35 +108,18 @@ function ItemList({ items, loading, selectedId, onSelect, variant }: Readonly<{
 
     return (
         <>
-            {items.map(item => {
-                const isSelected = !isMobile && selectedId === item.id;
-                return (
-                    <button key={item.id} onClick={() => onSelect(item)} style={{
-                        width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                        borderRadius: 10, border: 'none', cursor: 'pointer', marginBottom: 2,
-                        background: isSelected ? 'var(--accent-dim)' : 'transparent',
-                        borderLeft: isSelected ? '2px solid var(--accent)' : '2px solid transparent',
-                        transition: 'all 0.15s',
-                        padding,
-                    }}>
-                        <ItemIcon item={item} size={iconSize} />
-                        <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
-                            <p style={{ fontSize, color: 'var(--text-primary)', fontWeight: 500, ...ELLIPSIS_STYLE }}>
-                                {item.name}
-                            </p>
-                            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', ...ELLIPSIS_STYLE }}>
-                                {item.decrypted?.username || item.decrypted?.url || item.category}
-                            </p>
-                        </div>
-                        {item.is_favourite && (
-                            <Star size={isMobile ? 14 : 12} color="var(--accent)" fill="var(--accent)" />
-                        )}
-                        {isMobile && (
-                            <ChevronRight size={16} color="var(--text-secondary)" style={{ opacity: 0.4 }} />
-                        )}
-                    </button>
-                );
-            })}
+            {items.map(item => (
+                <ItemButton
+                    key={item.id}
+                    item={item}
+                    isSelected={!isMobile && selectedId === item.id}
+                    isMobile={isMobile}
+                    iconSize={iconSize}
+                    fontSize={fontSize}
+                    padding={padding}
+                    onSelect={onSelect}
+                />
+            ))}
         </>
     );
 }
@@ -159,6 +175,9 @@ function ItemDetailHeader({ item, isMobile, handleToggleFav, handleOpenEdit, han
     const iconSize = isMobile ? 48 : 52;
     const btnPad = isMobile ? '8px 10px' : '8px 12px';
     const iconPx = isMobile ? 15 : 16;
+    const onFav = useCallback(() => handleToggleFav(item), [handleToggleFav, item]);
+    const onEdit = useCallback(() => handleOpenEdit(item), [handleOpenEdit, item]);
+    const onDelete = useCallback(() => handleDelete(item.id), [handleDelete, item.id]);
 
     return (
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: isMobile ? 24 : 32 }}>
@@ -183,15 +202,15 @@ function ItemDetailHeader({ item, isMobile, handleToggleFav, handleOpenEdit, han
             </div>
 
             <div style={{ display: 'flex', gap: isMobile ? 4 : 8 }}>
-                <button onClick={() => handleToggleFav(item)} className="btn-ghost" style={{ padding: btnPad }}>
+                <button onClick={onFav} className="btn-ghost" style={{ padding: btnPad }}>
                     <Star size={iconPx}
                         color={item.is_favourite ? 'var(--accent)' : 'var(--text-secondary)'}
                         fill={item.is_favourite ? 'var(--accent)' : 'none'} />
                 </button>
-                <button onClick={() => handleOpenEdit(item)} className="btn-ghost" style={{ padding: btnPad }}>
+                <button onClick={onEdit} className="btn-ghost" style={{ padding: btnPad }}>
                     <Edit2 size={iconPx} />
                 </button>
-                <button onClick={() => handleDelete(item.id)} className="btn-ghost"
+                <button onClick={onDelete} className="btn-ghost"
                     disabled={deletingId === item.id}
                     style={{ padding: btnPad, color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.2)', opacity: deletingId === item.id ? 0.5 : 1 }}>
                     <Trash2 size={iconPx} />
@@ -233,18 +252,13 @@ function ItemDetailPanel({ selectedItem, selectedItemLoading, isMobile, handleTo
     return (
         <div className="animate-fade-up" style={isMobile ? undefined : { maxWidth: 560 }}>
             <ItemDetailHeader
-                item={selectedItem}
-                isMobile={isMobile}
-                handleToggleFav={handleToggleFav}
-                handleOpenEdit={handleOpenEdit}
-                handleDelete={handleDelete}
-                deletingId={deletingId}
+                item={selectedItem} isMobile={isMobile}
+                handleToggleFav={handleToggleFav} handleOpenEdit={handleOpenEdit}
+                handleDelete={handleDelete} deletingId={deletingId}
             />
             <ItemDetailFields
-                selectedItem={selectedItem}
-                copyToClipboard={copyToClipboard}
-                hibp={hibp}
-                setHibp={setHibp}
+                selectedItem={selectedItem} copyToClipboard={copyToClipboard}
+                hibp={hibp} setHibp={setHibp}
             />
             <p style={{ marginTop: isMobile ? 20 : 24, fontSize: '0.72rem', color: 'var(--text-secondary)', opacity: 0.6 }}>
                 Last updated {new Date(selectedItem.updated_at).toLocaleDateString()}
@@ -253,10 +267,30 @@ function ItemDetailPanel({ selectedItem, selectedItemLoading, isMobile, handleTo
     );
 }
 
+function CategoryPill({ id, label, icon: Icon, isActive, onSelect }: Readonly<{
+    id: string; label: string; icon: any;
+    isActive: boolean; onSelect: (id: string) => void;
+}>) {
+    const handleClick = useCallback(() => onSelect(id), [onSelect, id]);
+    return (
+        <button onClick={handleClick} style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+            borderRadius: 20, border: '1px solid',
+            borderColor: isActive ? 'var(--accent)' : 'var(--border)',
+            background: isActive ? 'var(--accent-dim)' : 'transparent',
+            color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
+            fontSize: '0.8rem', fontFamily: 'Outfit, sans-serif',
+            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+        }}>
+            <Icon size={13} /> {label}
+        </button>
+    );
+}
+
 export function MainDashboard(props: Readonly<any>) {
     const {
         user, category, searchValue, onSearchChange, handleExport, lockVault, handleLogout,
-        vaultItems, setShowAddModal, selectedItem, handleSelectItem, selectedItemLoading,
+        vaultItems, setShowAddModal, setCategory, selectedItem, handleSelectItem, selectedItemLoading,
         handleToggleFav, handleOpenEdit, handleDelete, deletingId, copyToClipboard,
         hibp, setHibp, showAddModal, newItem, setNewItem, savingItem, genOptions, handleAddItem,
         showEditModal, setShowEditModal, editForm, setEditForm, updatingItem, handleEditItem,
@@ -273,6 +307,8 @@ export function MainDashboard(props: Readonly<any>) {
     const handleMobileBack = useCallback(() => setMobilePanel('list'), []);
     const handleAddClose = useCallback(() => setShowAddModal(false), [setShowAddModal]);
     const handleEditClose = useCallback(() => { setShowEditModal(false); setEditForm(null); }, [setShowEditModal, setEditForm]);
+    const handleOpenAddModal = useCallback(() => setShowAddModal(true), [setShowAddModal]);
+    const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => onSearchChange(e.target.value), [onSearchChange]);
 
     const detailPanelProps: Omit<ItemDetailPanelProps, 'isMobile' | 'handleDelete' | 'onDeleteSuccess'> = {
         selectedItem, selectedItemLoading,
@@ -282,11 +318,8 @@ export function MainDashboard(props: Readonly<any>) {
     return (
         <div style={{ display: 'flex', height: '100dvh', background: 'var(--bg)', overflow: 'hidden' }}>
             <MobileTopBar
-                mobilePanel={mobilePanel}
-                selectedItem={selectedItem}
-                onBack={handleMobileBack}
-                lockVault={lockVault}
-                handleLogout={handleLogout}
+                mobilePanel={mobilePanel} selectedItem={selectedItem}
+                onBack={handleMobileBack} lockVault={lockVault} handleLogout={handleLogout}
             />
 
             <style>{`
@@ -314,29 +347,19 @@ export function MainDashboard(props: Readonly<any>) {
             }}>
                 {/* Category pills */}
                 <div style={{ overflowX: 'auto', display: 'flex', gap: 8, padding: '12px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-                    {CATEGORIES.map(({ id, label, icon: Icon }) => (
-                        <button key={id} onClick={() => props.setCategory(id as Category)} style={{
-                            display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-                            borderRadius: 20, border: '1px solid',
-                            borderColor: category === id ? 'var(--accent)' : 'var(--border)',
-                            background: category === id ? 'var(--accent-dim)' : 'transparent',
-                            color: category === id ? 'var(--accent)' : 'var(--text-secondary)',
-                            fontSize: '0.8rem', fontFamily: 'Outfit, sans-serif',
-                            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-                        }}>
-                            <Icon size={13} /> {label}
-                        </button>
+                    {CATEGORIES.map(({ id, label, icon }) => (
+                        <CategoryPill key={id} id={id} label={label} icon={icon}
+                            isActive={category === id} onSelect={setCategory} />
                     ))}
                 </div>
 
-                {/* Search + Add */}
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, flexShrink: 0 }}>
                     <div style={{ position: 'relative', flex: 1 }}>
                         <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
                         <input className="input-field" placeholder="Search vault..." value={searchValue}
-                            onChange={e => onSearchChange(e.target.value)} style={{ paddingLeft: 36, fontSize: 'max(16px, 0.9rem)' }} />
+                            onChange={handleSearchChange} style={{ paddingLeft: 36, fontSize: 'max(16px, 0.9rem)' }} />
                     </div>
-                    <button className="btn-primary" onClick={() => setShowAddModal(true)}
+                    <button className="btn-primary" onClick={handleOpenAddModal}
                         style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', flexShrink: 0 }}>
                         <Plus size={16} />
                     </button>
@@ -365,19 +388,14 @@ export function MainDashboard(props: Readonly<any>) {
                 flexDirection: 'column', background: 'var(--bg)', paddingTop: 57, overflowY: 'auto',
             }}>
                 <div style={{ padding: '24px 16px', flex: 1 }}>
-                    <ItemDetailPanel
-                        {...detailPanelProps}
-                        isMobile
-                        handleDelete={handleDelete}
-                        onDeleteSuccess={handleMobileBack}
-                    />
+                    <ItemDetailPanel {...detailPanelProps} isMobile handleDelete={handleDelete} onDeleteSuccess={handleMobileBack} />
                 </div>
             </div>
 
             {/* Desktop layout */}
             <DesktopSidebar
                 user={user} category={category} vaultItems={vaultItems}
-                setCategory={props.setCategory} handleExport={handleExport}
+                setCategory={setCategory} handleExport={handleExport}
                 lockVault={lockVault} handleLogout={handleLogout}
             />
 
@@ -386,9 +404,9 @@ export function MainDashboard(props: Readonly<any>) {
                     <div style={{ position: 'relative', marginBottom: 12 }}>
                         <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
                         <input className="input-field" placeholder="Search vault..." value={searchValue}
-                            onChange={e => onSearchChange(e.target.value)} style={{ paddingLeft: 36 }} />
+                            onChange={handleSearchChange} style={{ paddingLeft: 36 }} />
                     </div>
-                    <button className="btn-primary" onClick={() => setShowAddModal(true)}
+                    <button className="btn-primary" onClick={handleOpenAddModal}
                         style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                         <Plus size={16} /> Add Item
                     </button>
