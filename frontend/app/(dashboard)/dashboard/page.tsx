@@ -6,6 +6,8 @@ import { getItemLoadError } from '@/lib/errors';
 import { useAuthStore } from '@/lib/store';
 import type { VaultItem } from '@/lib/types';
 import { vaultApi, authApi } from '@/lib/api';
+import { emitAuthEvent, subscribeToAuthEvents } from '@/lib/authSync';
+import type { AuthSyncEvent } from '@/lib/authSync';
 import { deriveKey, encryptData, decryptData } from '@/lib/crypto';
 import { Category, genOptions, emptyForm } from '../../../components/dashboard/types';
 import type { ItemForm } from '../../../components/dashboard/types';
@@ -131,7 +133,12 @@ export default function Page() {
     useVaultUnlock(user, setVaultKey, setVaultItems, setTotalPages, setTotalItems);
 
   // Idle auto-lock (extracted hook)
-  useIdleTimer(isVaultLocked, lockVault);
+  const handleLockVault = useCallback(() => {
+    lockVault();
+    emitAuthEvent('lock');
+  }, [lockVault]);
+
+  useIdleTimer(isVaultLocked, handleLockVault);
   // Session restore
   useEffect(() => {
     if (isAuthenticated) { setSessionLoading(false); return; }
@@ -140,6 +147,20 @@ export default function Page() {
       router.push('/auth');
     });
   }, []);
+
+  useEffect(() => {
+    return subscribeToAuthEvents((event: AuthSyncEvent) => {
+      if (event.type === 'logout') {
+        logout();
+        router.replace('/auth');
+        return;
+      }
+
+      if (event.type === 'lock') {
+        lockVault();
+      }
+    });
+  }, [lockVault, logout, router]);
 
   useEffect(() => {
     if (isVaultLocked) {
@@ -160,7 +181,8 @@ export default function Page() {
   const handleLogout = useCallback(async () => {
     try { await authApi.logout(); } catch { /* ignore network errors on logout */ }
     logout();
-    router.push('/auth');
+    emitAuthEvent('logout');
+    router.replace('/auth');
   }, [logout, router]);
 
   const handleMasterPasswordChange = useCallback(
@@ -401,7 +423,7 @@ export default function Page() {
       searchValue={search}
       onSearchChange={handleSearchChange}
       handleExport={handleExport}
-      lockVault={lockVault}
+      lockVault={handleLockVault}
       handleLogout={handleLogout}
       vaultItems={vaultItems}
       selectedItem={selectedItem}
