@@ -20,7 +20,17 @@ from typing import Optional
 import bcrypt
 from jose import jwt
 
-SECRET_KEY = os.getenv("JWT_SECRET", secrets.token_hex(48))
+# Hard-fail at startup if JWT_SECRET is not set.
+# An ephemeral fallback would silently invalidate all tokens on every
+# Vercel cold-start / redeployment, so we raise immediately instead.
+_jwt_secret = os.environ.get("JWT_SECRET")
+if not _jwt_secret:
+    raise RuntimeError(
+        "JWT_SECRET environment variable is not set. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_hex(48))\""
+    )
+SECRET_KEY: str = _jwt_secret
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 30
