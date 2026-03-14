@@ -105,7 +105,10 @@ export function generatePassword(options: {
 const _hibpCache = new Map<string, number>();
 
 export async function checkHIBP(password: string): Promise<number> {
-  if (_hibpCache.has(password)) return _hibpCache.get(password)!;
+  if (_hibpCache.has(password)) {
+    const cached = _hibpCache.get(password);
+    if (typeof cached === 'number') return cached;
+  }
   const encoded = new TextEncoder().encode(password);
   const hashBuffer = await crypto.subtle.digest('SHA-1', encoded);
   const hashHex = Array.from(new Uint8Array(hashBuffer))
