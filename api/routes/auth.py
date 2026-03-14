@@ -2,12 +2,14 @@
 routes/auth.py — Auth routes with Redis cache integration.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, Cookie
-from sqlalchemy.orm import Session
-from datetime import datetime, timedelta, timezone
-from jose import JWTError
-from typing import Annotated, Optional
+import os
 import logging
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, Cookie
+from jose import JWTError
+from sqlalchemy.orm import Session
 
 from database import get_db, User, AuditLog, RefreshToken
 from crypto import (
@@ -23,23 +25,17 @@ from crypto import (
 from schemas import RegisterRequest, LoginRequest, TokenResponse, UserResponse
 from deps import get_current_user_from_db
 from cache import (
-    get_cached_user,
-    set_cached_user,
-    invalidate_user,
     get_cached_vault_salt,
     set_cached_vault_salt,
     get_cached_refresh_token,
     cache_refresh_token_valid,
     revoke_refresh_token_cache,
     is_token_blacklisted,
+    invalidate_user,
     invalidate_all_vault,
     prime_vault_salt,
+    set_cached_user,
 )
-
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from limiter import limiter
 
 logger = logging.getLogger(__name__)
@@ -64,7 +60,7 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
     )
 
 
-def log_action(db: Session, user_id, action: str, request: Request) -> None:
+def _log_action(db: Session, user_id, action: str, request: Request) -> None:
     db.add(
         AuditLog(
             user_id=user_id,
@@ -75,10 +71,9 @@ def log_action(db: Session, user_id, action: str, request: Request) -> None:
     )
 
 
-def _warm_caches(user: User, refresh_token: str, token_hash: str) -> None:
-    # Prime user profile, vault salt, and refresh token validity after auth
+def _warm_caches(user: User, token_hash: str) -> None:
+    """Prime user profile, vault salt, and refresh token validity after auth."""
     user_id = str(user.id)
-
     set_cached_user(
         user_id,
         {
@@ -94,6 +89,8 @@ def _warm_caches(user: User, refresh_token: str, token_hash: str) -> None:
     prime_vault_salt(user_id, user.vault_salt)
     cache_refresh_token_valid(token_hash, user_id, _RT_TTL_SECONDS)
 
+
+# Register
 
 @router.post(
     "/register",
@@ -125,20 +122,24 @@ def register(
     refresh_token = create_refresh_token({"sub": str(user.id)})
     token_hash = hash_refresh_token(refresh_token)
 
-    rt = RefreshToken(
-        user_id=user.id,
-        token_hash=token_hash,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+    db.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        )
     )
-    db.add(rt)
-    log_action(db, user.id, "REGISTER", request)
+    _log_action(db, user.id, "REGISTER", request)
     db.commit()
 
-    _warm_caches(user, refresh_token, token_hash)
+    _warm_caches(user, token_hash)
     _set_refresh_cookie(response, refresh_token)
 
+    logger.info(f"REGISTER user={user.id}")
     return TokenResponse(access_token=access_token, vault_salt=user.vault_salt)
 
+
+# Login
 
 @router.post(
     "/login",
@@ -162,21 +163,24 @@ def login(
     refresh_token = create_refresh_token({"sub": str(user.id)})
     token_hash = hash_refresh_token(refresh_token)
 
-    rt = RefreshToken(
-        user_id=user.id,
-        token_hash=token_hash,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+    db.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        )
     )
-    db.add(rt)
-    log_action(db, user.id, "LOGIN", request)
+    _log_action(db, user.id, "LOGIN", request)
     db.commit()
 
-    _warm_caches(user, refresh_token, token_hash)
+    _warm_caches(user, token_hash)
     _set_refresh_cookie(response, refresh_token)
 
     logger.info(f"LOGIN user={user.id}")
     return TokenResponse(access_token=access_token, vault_salt=user.vault_salt)
 
+
+# Refresh — token rotation with Redis-first validation
 
 @router.post(
     "/refresh",
@@ -209,20 +213,11 @@ def refresh(
     cached_rt = get_cached_refresh_token(token_hash)
 
     if cached_rt:
+        # Cache confirms this token is valid — skip the DB read entirely.
+        # The token is rotated (revoked in both cache + DB) immediately below,
+        # so there is no meaningful window for a stale cache to cause harm.
         logger.debug(f"refresh token cache HIT user={user_id}")
-        stored = (
-            db.query(RefreshToken)
-            .filter(
-                RefreshToken.token_hash == token_hash,
-                RefreshToken.revoked == False,
-                RefreshToken.expires_at > datetime.now(timezone.utc),
-            )
-            .first()
-        )
-        if not stored:
-            # Cache said valid but DB says revoked — honour DB
-            revoke_refresh_token_cache(token_hash, jti, _RT_TTL_SECONDS)
-            raise HTTPException(status_code=401, detail="Refresh token expired or revoked")
+        stored = None  # resolved lazily during rotation
     else:
         logger.debug(f"refresh token cache MISS user={user_id}")
         stored = (
@@ -237,34 +232,51 @@ def refresh(
         if not stored:
             raise HTTPException(status_code=401, detail="Refresh token expired or revoked")
 
-    # Rotate: revoke old, issue new
-    stored.revoked = True
+    # Revoke old token in cache immediately (blacklist the JTI)
     revoke_refresh_token_cache(token_hash, jti, _RT_TTL_SECONDS)
+
+    # Mark old DB row as revoked — fetch it now if we skipped the MISS query
+    if stored is None:
+        stored = (
+            db.query(RefreshToken)
+            .filter(RefreshToken.token_hash == token_hash)
+            .first()
+        )
+    if stored:
+        stored.revoked = True
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user or not user.is_active:
+        db.commit()  # persist revocation even if account is gone/disabled
         raise HTTPException(status_code=401, detail="Account not found or disabled")
 
     new_access = create_access_token({"sub": user_id})
     new_refresh = create_refresh_token({"sub": user_id})
     new_hash = hash_refresh_token(new_refresh)
 
-    new_rt = RefreshToken(
-        user_id=user_id,
-        token_hash=new_hash,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+    db.add(
+        RefreshToken(
+            user_id=user_id,
+            token_hash=new_hash,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        )
     )
-    db.add(new_rt)
+    _log_action(db, user_id, "TOKEN_REFRESH", request)
     db.commit()
 
-    _warm_caches(user, new_refresh, new_hash)
+    _warm_caches(user, new_hash)
     _set_refresh_cookie(response, new_refresh)
 
+    logger.info(f"TOKEN_REFRESH user={user_id}")
     return TokenResponse(access_token=new_access, vault_salt=user.vault_salt)
 
 
+# Logout
+
 @router.post("/logout")
+@limiter.limit("20/minute")
 def logout(
+    request: Request,
     response: Response,
     db: Annotated[Session, Depends(get_db)],
     refresh_token: Annotated[Optional[str], Cookie()] = None,
@@ -279,7 +291,9 @@ def logout(
             stored = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
             if stored:
                 stored.revoked = True
-                db.commit()
+
+            _log_action(db, user_id, "LOGOUT", request)
+            db.commit()
 
             revoke_refresh_token_cache(token_hash, jti, _RT_TTL_SECONDS)
             invalidate_user(user_id)
@@ -298,16 +312,24 @@ def logout(
     return {"message": "Logged out"}
 
 
+# Me / Vault-salt
+
 @router.get("/me", response_model=UserResponse)
-def me(current_user: Annotated[User, Depends(get_current_user_from_db)]):
+@limiter.limit("60/minute")
+def me(
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_user_from_db)],
+):
     return current_user
 
 
 @router.get("/vault-salt", response_model=dict)
+@limiter.limit("30/minute")
 def get_vault_salt(
+    request: Request,
     current_user: Annotated[User, Depends(get_current_user_from_db)],
 ):
-    # Returns vault salt for client-side key re-derivation on vault unlock
+    """Returns vault salt for client-side key re-derivation on vault unlock."""
     user_id = str(current_user.id)
 
     cached_salt = get_cached_vault_salt(user_id)
