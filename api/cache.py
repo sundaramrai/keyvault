@@ -21,6 +21,7 @@ import logging
 from typing import Optional, Any
 
 import redis
+from crypto import REFRESH_TOKEN_EXPIRE_DAYS
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +30,8 @@ TTL_USER_PROFILE = 15 * 60
 TTL_VAULT_LIST = 5 * 60
 TTL_VAULT_ITEM = 10 * 60
 TTL_VAULT_SALT = 60 * 60
-TTL_RT_VALID = 30 * 24 * 3600
-TTL_TOKEN_BLACKLIST = 31 * 24 * 3600
+TTL_RT_VALID = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
+TTL_TOKEN_BLACKLIST = (REFRESH_TOKEN_EXPIRE_DAYS + 1) * 24 * 3600
 
 
 def _build_redis_client() -> Optional[redis.Redis]:
