@@ -1,94 +1,79 @@
 'use client';
-import { useState, useEffect, Suspense } from 'react';
+import { useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Key, Eye, EyeOff, AlertCircle } from 'lucide-react';
-import { toastService } from '@/lib/toast';
-import { parseApiError } from '@/lib/errors';
-import { authApi, setAccessToken } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
-import { passwordStrength } from '@/lib/crypto';
+import { useAuthForm } from '@/components/dashboard/hooks/useAuthForm';
+
+const GLOW_STYLE = {
+  position: 'fixed' as const,
+  top: '30%',
+  left: '50%',
+  transform: 'translateX(-50%)',
+  width: 'min(600px, 100vw)',
+  height: 'min(600px, 100vw)',
+  borderRadius: '50%',
+  background: 'radial-gradient(ellipse, rgba(245,158,11,0.08) 0%, transparent 70%)',
+  pointerEvents: 'none' as const,
+};
+
+const LOGO_WRAP_STYLE = {
+  width: 44,
+  height: 44,
+  borderRadius: 10,
+  flexShrink: 0,
+  background: 'var(--accent)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+} as const;
+
+const CARD_STYLE = {
+  borderRadius: 20,
+  padding: 'clamp(24px, 6vw, 40px)',
+} as const;
+
+const WARNING_BOX_STYLE = {
+  display: 'flex',
+  gap: 8,
+  marginTop: 10,
+  padding: 'clamp(8px, 2vw, 10px) 12px',
+  borderRadius: 8,
+  background: 'rgba(245,158,11,0.06)',
+  border: '1px solid rgba(245,158,11,0.15)',
+} as const;
 
 function AuthPageContent() {
   const router = useRouter();
   const params = useSearchParams();
-  const [tab, setTab] = useState<'login' | 'register'>(
-    params.get('tab') === 'register' ? 'register' : 'login'
-  );
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ email: '', password: '', fullName: '', masterHint: '' });
-  const { setAuth, isAuthenticated, restoreSession } = useAuthStore();
+  const { isAuthenticated, restoreSession } = useAuthStore();
+  const initialTab = params.get('tab') === 'register' ? 'register' : 'login';
+  const {
+    tab, setTab, toggleTab,
+    showPassword, togglePassword,
+    loading, form, handleChange,
+    handleSubmit, strength, submitLabel,
+  } = useAuthForm(initialTab);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      router.push('/dashboard');
-      return;
-    }
-    restoreSession().then((ok) => {
-      if (ok) router.push('/dashboard');
-    });
+    if (isAuthenticated) { router.push('/dashboard'); return; }
+    restoreSession().then((ok) => { if (ok) router.push('/dashboard'); });
   }, []);
-
-  const strength = tab === 'register' ? passwordStrength(form.password) : null;
-
-  const handleSubmit = async (e: React.SyntheticEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      if (tab === 'register') {
-        const { data } = await authApi.register(form.email, form.password, form.fullName, form.masterHint);
-        setAccessToken(data.access_token);
-        const { data: user } = await authApi.me();
-        setAuth(user, data.access_token);
-        toastService.success('Account created! Set your master password to unlock the vault.');
-      } else {
-        const { data } = await authApi.login(form.email, form.password);
-        setAccessToken(data.access_token);
-        const { data: user } = await authApi.me();
-        setAuth(user, data.access_token);
-        toastService.success('Welcome back!');
-      }
-      router.push('/dashboard');
-    } catch (err: any) {
-      toastService.error(parseApiError(err, 'Something went wrong'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  let buttonLabel = '';
-  if (loading) {
-    buttonLabel = 'Please wait...';
-  } else if (tab === 'login') {
-    buttonLabel = 'Sign In';
-  } else {
-    buttonLabel = 'Create Account';
-  }
 
   return (
     <main
-      className="min-h-screen flex items-center justify-center"
       style={{
         background: 'var(--bg)',
         padding: 'clamp(16px, 5vw, 24px)',
-        /* On very small screens, allow content to start near top rather than centering off-screen */
+        minHeight: '100dvh',
+        display: 'flex',
         alignItems: 'flex-start',
+        justifyContent: 'center',
       }}
     >
-      {/* Offset alignment fix: re-center on larger screens */}
-      <style>{`
-        @media (min-height: 640px) {
-          main { align-items: center !important; }
-        }
-      `}</style>
+      <style>{`@media (min-height: 640px) { main { align-items: center !important; } }`}</style>
 
-      {/* Background glow */}
-      <div style={{
-        position: 'fixed', top: '30%', left: '50%', transform: 'translateX(-50%)',
-        width: 'min(600px, 100vw)', height: 'min(600px, 100vw)', borderRadius: '50%',
-        background: 'radial-gradient(ellipse, rgba(245,158,11,0.08) 0%, transparent 70%)',
-        pointerEvents: 'none',
-      }} />
+      <div style={GLOW_STYLE} />
 
       <div
         className="animate-fade-up"
@@ -96,17 +81,14 @@ function AuthPageContent() {
       >
         {/* Logo */}
         <div className="flex items-center gap-3 justify-center" style={{ marginBottom: 'clamp(24px, 6vw, 40px)' }}>
-          <div style={{
-            width: 44, height: 44, borderRadius: 10, flexShrink: 0,
-            background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
+          <div style={LOGO_WRAP_STYLE}>
             <Key size={22} color="#0a0908" strokeWidth={2.5} />
           </div>
           <span className="font-display text-3xl" style={{ color: 'var(--text-primary)' }}>Cipheria</span>
         </div>
 
         {/* Card */}
-        <div className="glass" style={{ borderRadius: 20, padding: 'clamp(24px, 6vw, 40px)' }}>
+        <div className="glass" style={CARD_STYLE}>
           {/* Tabs */}
           <div style={{
             display: 'flex', gap: 0, marginBottom: 'clamp(20px, 5vw, 32px)',
@@ -118,9 +100,7 @@ function AuthPageContent() {
                 background: tab === t ? 'var(--accent)' : 'transparent',
                 color: tab === t ? '#0a0908' : 'var(--text-secondary)',
                 fontFamily: 'Outfit, sans-serif', fontWeight: 600,
-                fontSize: 'clamp(0.78rem, 2.5vw, 0.875rem)',
-                transition: 'all 0.2s', textTransform: 'capitalize',
-                whiteSpace: 'nowrap',
+                fontSize: 'clamp(0.78rem, 2.5vw, 0.875rem)', transition: 'all 0.2s', whiteSpace: 'nowrap' as const,
               }}>
                 {t === 'login' ? 'Sign In' : 'Create Account'}
               </button>
@@ -139,7 +119,7 @@ function AuthPageContent() {
                   type="text"
                   placeholder="Ada Lovelace"
                   value={form.fullName}
-                  onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+                  onChange={handleChange('fullName')}
                 />
               </div>
             )}
@@ -155,8 +135,7 @@ function AuthPageContent() {
                 placeholder="you@example.com"
                 required
                 value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                /* Prevent iOS zoom on focus (font-size >= 16px) */
+                onChange={handleChange('email')}
                 style={{ fontSize: 'max(16px, 0.9rem)' }}
               />
             </div>
@@ -173,13 +152,12 @@ function AuthPageContent() {
                   placeholder="••••••••••••"
                   required
                   value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  onChange={handleChange('password')}
                   style={{ paddingRight: 44, fontSize: 'max(16px, 0.9rem)' }}
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  /* Larger tap target for mobile */
+                  onClick={togglePassword}
                   style={{
                     position: 'absolute', right: 0, top: 0, bottom: 0,
                     width: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -217,14 +195,10 @@ function AuthPageContent() {
                   type="text"
                   placeholder="A hint to remember your master password"
                   value={form.masterHint}
-                  onChange={(e) => setForm({ ...form, masterHint: e.target.value })}
+                  onChange={handleChange('masterHint')}
                   style={{ fontSize: 'max(16px, 0.9rem)' }}
                 />
-                <div style={{
-                  display: 'flex', gap: 8, marginTop: 10,
-                  padding: 'clamp(8px, 2vw, 10px) 12px',
-                  borderRadius: 8, background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)',
-                }}>
+                <div style={WARNING_BOX_STYLE}>
                   <AlertCircle size={14} color="var(--accent)" style={{ flexShrink: 0, marginTop: 2 }} />
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                     Your master password derives the encryption key. If you forget it, <strong style={{ color: 'var(--text-primary)' }}>your vault cannot be recovered</strong>.
@@ -240,11 +214,10 @@ function AuthPageContent() {
               style={{
                 marginTop: 8, opacity: loading ? 0.7 : 1,
                 cursor: loading ? 'not-allowed' : 'pointer',
-                /* Comfortable tap target on mobile */
                 minHeight: 48,
               }}
             >
-              {buttonLabel}
+              {submitLabel}
             </button>
           </form>
         </div>
@@ -252,7 +225,7 @@ function AuthPageContent() {
         <p style={{ textAlign: 'center', marginTop: 20, fontSize: '0.8rem', color: 'var(--text-secondary)', paddingBottom: 'env(safe-area-inset-bottom, 16px)' }}>
           {tab === 'login' ? "Don't have an account? " : 'Already have an account? '}
           <button
-            onClick={() => setTab(tab === 'login' ? 'register' : 'login')}
+            onClick={toggleTab}
             style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.8rem', padding: '4px 2px' }}
           >
             {tab === 'login' ? 'Create one' : 'Sign in'}
