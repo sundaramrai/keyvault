@@ -101,14 +101,17 @@ export function generatePassword(options: {
 }
 
 // HIBP Pwned Passwords — k-anonymity model (SHA-1 prefix, never sends full hash)
-// In-memory cache: avoids re-fetching for the same password within a session
+/**
+ * Client-side session cache only.
+ * This Map is module-level — safe in the browser (one instance per tab).
+ * Do NOT use this module in SSR/edge context without clearing the cache
+ * between requests, as it would be shared across users in the same instance.
+ */
 const _hibpCache = new Map<string, number>();
 
 export async function checkHIBP(password: string): Promise<number> {
-  if (_hibpCache.has(password)) {
-    const cached = _hibpCache.get(password);
-    if (typeof cached === 'number') return cached;
-  }
+  const cached = _hibpCache.get(password);
+  if (typeof cached === 'number') return cached;
   const encoded = new TextEncoder().encode(password);
   const hashBuffer = await crypto.subtle.digest('SHA-1', encoded);
   const hashHex = Array.from(new Uint8Array(hashBuffer))
