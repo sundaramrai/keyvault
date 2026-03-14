@@ -3,13 +3,13 @@ routes/vault.py — Vault CRUD with Redis caching and ETag support.
 """
 
 import hashlib
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy.orm import Session
+import logging
 from typing import Annotated, Optional
 from uuid import UUID
-import logging
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from sqlalchemy.orm import Session
 
-from database import get_db, VaultItem
+from database import get_db, VaultItem, AuditLog
 from schemas import (
     VaultItemCreate,
     VaultItemUpdate,
@@ -25,8 +25,8 @@ from cache import (
     get_cached_vault_item,
     set_cached_vault_item,
     invalidate_vault_item,
-    invalidate_all_vault,
 )
+from limiter import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,7 @@ MAX_PAGE_SIZE = 100
 
 
 def _item_to_dict(item) -> dict:
+    """Full serialisation including encrypted_data — used for single-item responses."""
     return {
         "id": str(item.id),
         "name": item.name,
@@ -50,7 +51,7 @@ def _item_to_dict(item) -> dict:
 
 
 def _item_to_summary_dict(item) -> dict:
-    # Excludes encrypted_data — used for list responses
+    """Excludes encrypted_data — used for list responses to minimise payload."""
     return {
         "id": str(item.id),
         "name": item.name,
@@ -63,21 +64,39 @@ def _item_to_summary_dict(item) -> dict:
 
 
 def _make_etag(data: dict) -> str:
-    # Stable ETag from total count + most recent updated_at
+    # Stable ETag from total count + page params + most recent updated_at
     raw = f"{data['total']}:{data['page']}:{data['page_size']}"
     if data["items"]:
         raw += f":{data['items'][0].get('updated_at', '')}"
     return f'"{hashlib.md5(raw.encode()).hexdigest()}"'
 
 
-# Export — always hits DB, no cache
+def _log_action(db: Session, user_id, action: str, request: Request) -> None:
+    db.add(
+        AuditLog(
+            user_id=user_id,
+            action=action,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+    )
+
+
+# Export — always hits DB, no cache, strictly rate-limited, audited
 
 @router.get("/export/json")
+@limiter.limit("3/minute")
 def export_vault(
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     current_user: DBUser,
 ):
     items = db.query(VaultItem).filter(VaultItem.user_id == current_user.id).all()
+
+    _log_action(db, current_user.id, "VAULT_EXPORT", request)
+    db.commit()
+
+    logger.info(f"VAULT_EXPORT user={current_user.id} items={len(items)}")
     return {
         "export_version": "1.0",
         "user_email": current_user.email,
@@ -97,7 +116,7 @@ def export_vault(
     }
 
 
-# List — cached, paginated, ETag support, no encrypted_data
+# List — cached, paginated, ETag support, encrypted_data excluded
 
 @router.get("", response_model=PaginatedVaultResponse)
 def list_items(
@@ -113,7 +132,7 @@ def list_items(
 ):
     user_id = str(current_user.id)
 
-    # Skip caching for search queries (low repetition)
+    # Skip caching for search queries (low repetition, unpredictable key space)
     if not search:
         cached = get_cached_vault_list(
             user_id, category, search, favourites_only, page, page_size
@@ -132,7 +151,8 @@ def list_items(
         VaultItem.id,
         VaultItem.name,
         VaultItem.category,
-        VaultItem.encrypted_data,
+        # encrypted_data intentionally excluded from list — callers fetch
+        # individual items via GET /vault/{id} when ciphertext is needed.
         VaultItem.favicon_url,
         VaultItem.is_favourite,
         VaultItem.created_at,
@@ -153,7 +173,7 @@ def list_items(
         .limit(page_size)
         .all()
     )
-    items_data = [_item_to_dict(r) for r in rows]
+    items_data = [_item_to_summary_dict(r) for r in rows]
 
     result = {
         "items": items_data,
@@ -173,7 +193,7 @@ def list_items(
     return result
 
 
-# Get single item — cached
+# Get single item — cached, includes encrypted_data
 
 @router.get(
     "/{item_id}",
@@ -207,7 +227,7 @@ def get_item(
     return data
 
 
-# Create — invalidates list cache
+# Create — invalidates list cache, primes item cache
 
 @router.post("", response_model=VaultItemResponse, status_code=201)
 def create_item(
@@ -227,6 +247,7 @@ def create_item(
     )
     db.add(item)
     db.commit()
+    db.refresh(item)  # ensures created_at / updated_at reflect DB-generated values
 
     invalidate_vault_list(user_id)
     logger.debug(f"vault:list cache busted (create) user={user_id}")
@@ -236,7 +257,7 @@ def create_item(
     return data
 
 
-# Update — invalidates item + list cache
+# Update — invalidates item + list cache, re-primes item cache
 
 @router.patch(
     "/{item_id}",
@@ -263,6 +284,7 @@ def update_item(
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(item, field, value)
     db.commit()
+    db.refresh(item)  # ensures updated_at reflects the DB-generated timestamp
 
     invalidate_vault_item(user_id, item_key)
     invalidate_vault_list(user_id)
