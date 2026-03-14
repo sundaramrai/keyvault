@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * crypto.ts — Client-side AES-256-GCM encryption using the Web Crypto API.
  *
