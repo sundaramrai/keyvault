@@ -263,7 +263,7 @@ function AuthPageContent() {
   );
 }
 
-export default function AuthPage() {
+export default function Page() {
   return (
     <Suspense>
       <AuthPageContent />
