@@ -1,5 +1,5 @@
 export type AuthSyncEvent = {
-  type: 'logout' | 'lock';
+  type: 'logout' | 'lock' | 'user-updated';
   id: string;
   tabId: string;
 };
