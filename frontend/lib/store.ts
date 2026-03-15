@@ -79,6 +79,13 @@ export const useAuthStore = create<AuthStore>((set) => ({
           return true;
         } catch {
           setAccessToken(null);
+          set({
+            user: null,
+            cryptoKey: null,
+            isAuthenticated: false,
+            vaultItems: [],
+            isVaultLocked: true,
+          });
           return false;
         } finally {
           _pending = null;
