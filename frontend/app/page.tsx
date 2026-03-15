@@ -16,8 +16,8 @@ export default function Page() {
         }
         .nav-link-ghost { color: var(--text-secondary); border: 1px solid var(--border); }
         .nav-link-ghost:hover { color: var(--text-primary); border-color: var(--border-hover); background: var(--accent-dim); }
-        .nav-link-primary { background: var(--accent); color: #0a0908; font-weight: 600; letter-spacing: 0.02em; gap: 6px; }
-        .nav-link-primary:hover { background: #e8940a; box-shadow: 0 4px 16px rgba(245,158,11,0.3); }
+        .nav-link-primary { background: var(--accent); color: var(--accent-ink); font-weight: 600; letter-spacing: 0.02em; gap: 6px; }
+        .nav-link-primary:hover { background: color-mix(in srgb, var(--accent) 92%, black 8%); box-shadow: 0 4px 16px var(--accent-shadow-strong); }
         .hero-ctas { flex-direction: column; width: 100%; max-width: 340px; }
         @media (min-width: 480px) {
           .hero-ctas { flex-direction: row; width: auto; max-width: none; }
@@ -37,12 +37,12 @@ export default function Page() {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         borderBottom: '1px solid var(--border)',
         position: 'sticky', top: 0, zIndex: 40,
-        background: 'rgba(8,7,6,0.9)',
+        background: 'var(--surface-veil)',
         backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(245,158,11,0.3)' }}>
-            <Key size={16} color="#0a0908" strokeWidth={2.8} />
+          <div style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--logo-shadow)' }}>
+            <Key size={16} color="var(--accent-ink)" strokeWidth={2.8} />
           </div>
           <span className="font-display" style={{ fontSize: 'clamp(1.15rem, 3vw, 1.35rem)', color: 'var(--text-primary)', lineHeight: 1 }}>
             Cipheria
@@ -60,7 +60,7 @@ export default function Page() {
       <section style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 'clamp(56px, 12vw, 112px) 24px clamp(56px, 10vw, 96px)', position: 'relative' }}>
         <div style={{ width: 1, height: 48, background: 'linear-gradient(to bottom, transparent, var(--border))', marginBottom: 20 }} />
 
-        <div className="animate-fade-up" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'var(--accent-dim)', border: '1px solid rgba(245,158,11,0.28)', borderRadius: 100, padding: '5px 14px', marginBottom: 'clamp(20px, 5vw, 28px)' }}>
+        <div className="animate-fade-up" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'var(--accent-dim)', border: '1px solid var(--accent-border-strong)', borderRadius: 100, padding: '5px 14px', marginBottom: 'clamp(20px, 5vw, 28px)' }}>
           <Shield size={11} color="var(--accent)" />
           <span style={{ fontSize: '0.7rem', color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 500 }}>
             Zero-knowledge encryption
@@ -78,7 +78,7 @@ export default function Page() {
         </p>
 
         <div className="animate-fade-up hero-ctas" style={{ display: 'flex', gap: 10, animationDelay: '240ms' }}>
-          <Link href="/auth?tab=register" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, textDecoration: 'none', background: 'var(--accent)', color: '#0a0908', fontWeight: 600, padding: '13px 28px', borderRadius: 'var(--radius-md)', fontSize: '0.95rem', letterSpacing: '0.02em', transition: 'all 0.2s', width: '100%' }}>
+          <Link href="/auth?tab=register" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, textDecoration: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 600, padding: '13px 28px', borderRadius: 'var(--radius-md)', fontSize: '0.95rem', letterSpacing: '0.02em', transition: 'all 0.2s', width: '100%' }}>
             Start for free <ArrowRight size={16} />
           </Link>
           <Link href="/auth" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', color: 'var(--text-secondary)', border: '1px solid var(--border)', padding: '13px 28px', borderRadius: 'var(--radius-md)', fontSize: '0.95rem', transition: 'all 0.2s', width: '100%' }}>
@@ -112,7 +112,7 @@ export default function Page() {
             ].map(({ icon: Icon, title, desc }) => (
               <div key={title} className="glass glass-hover" style={{ borderRadius: 'var(--radius-lg)', padding: 'clamp(18px, 3vw, 26px)' }}>
                 <div className="feature-card-inner" style={{ display: 'flex', flexDirection: 'row', gap: 14, alignItems: 'flex-start' }}>
-                  <div className="feature-icon" style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0, background: 'var(--accent-dim)', border: '1px solid rgba(245,158,11,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
+                  <div className="feature-icon" style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0, background: 'var(--accent-dim)', border: '1px solid var(--accent-border-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
                     <Icon size={18} color="var(--accent)" strokeWidth={1.8} />
                   </div>
                   <div>
@@ -130,7 +130,7 @@ export default function Page() {
       <footer style={{ borderTop: '1px solid var(--border)', padding: 'clamp(16px, 3vw, 22px) 24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
           <div style={{ width: 18, height: 18, borderRadius: 5, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Key size={9} color="#0a0908" strokeWidth={3} />
+            <Key size={9} color="var(--accent-ink)" strokeWidth={3} />
           </div>
           <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Cipheria</span>
         </div>
