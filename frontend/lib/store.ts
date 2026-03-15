@@ -1,23 +1,16 @@
 import { create } from 'zustand';
 import { authApi, setAccessToken, getAccessToken } from '@/lib/api';
-import type { VaultItem } from '@/lib/types';
-
-interface User {
-  id: string;
-  email: string;
-  full_name?: string;
-  vault_salt: string;
-  master_hint?: string;
-}
+import type { UserProfile, VaultItem } from '@/lib/types';
 
 interface AuthStore {
-  user: User | null;
+  user: UserProfile | null;
   cryptoKey: CryptoKey | null;
   isAuthenticated: boolean;
   vaultItems: VaultItem[];
   isVaultLocked: boolean;
 
-  setAuth: (user: User, accessToken: string) => void;
+  setAuth: (user: UserProfile, accessToken: string) => void;
+  setUser: (user: UserProfile | null) => void;
   setVaultKey: (key: CryptoKey) => void;
   setVaultItems: (items: VaultItem[]) => void;
   updateVaultItem: (id: string, item: VaultItem) => void;
@@ -43,6 +36,8 @@ export const useAuthStore = create<AuthStore>((set) => ({
     setAccessToken(accessToken);
     set({ user, isAuthenticated: true });
   },
+
+  setUser: (user) => set({ user }),
 
   setVaultKey: (key) => set({ cryptoKey: key, isVaultLocked: false }),
 
