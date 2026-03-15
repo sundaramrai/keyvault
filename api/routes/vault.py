@@ -4,6 +4,7 @@ routes/vault.py — Vault CRUD with Redis caching and ETag support.
 
 import hashlib
 import logging
+from datetime import datetime, timezone
 from typing import Annotated, Literal, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -17,6 +18,7 @@ from schemas import (
     VaultItemResponse,
     VaultItemSummary,
     PaginatedVaultResponse,
+    VaultSidebarCountsResponse,
 )
 from deps import CurrentUser, DBUser
 from cache import (
@@ -38,6 +40,68 @@ MAX_PAGE_SIZE = 100
 VAULT_ITEM_LIMIT = 1000
 
 
+def _sidebar_counts(db: Session, user_id) -> dict:
+    counts = db.query(
+        func.count(VaultItem.id)
+        .filter(
+            VaultItem.user_id == user_id,
+            VaultItem.is_deleted.is_(False),
+        )
+        .label("all"),
+        func.count(VaultItem.id)
+        .filter(
+            VaultItem.user_id == user_id,
+            VaultItem.is_deleted.is_(False),
+            VaultItem.category == "login",
+        )
+        .label("login"),
+        func.count(VaultItem.id)
+        .filter(
+            VaultItem.user_id == user_id,
+            VaultItem.is_deleted.is_(False),
+            VaultItem.category == "card",
+        )
+        .label("card"),
+        func.count(VaultItem.id)
+        .filter(
+            VaultItem.user_id == user_id,
+            VaultItem.is_deleted.is_(False),
+            VaultItem.category == "note",
+        )
+        .label("note"),
+        func.count(VaultItem.id)
+        .filter(
+            VaultItem.user_id == user_id,
+            VaultItem.is_deleted.is_(False),
+            VaultItem.category == "identity",
+        )
+        .label("identity"),
+        func.count(VaultItem.id)
+        .filter(
+            VaultItem.user_id == user_id,
+            VaultItem.is_deleted.is_(False),
+            VaultItem.is_favourite.is_(True),
+        )
+        .label("favourites"),
+        func.count(VaultItem.id)
+        .filter(
+            VaultItem.user_id == user_id,
+            VaultItem.is_deleted.is_(True),
+        )
+        .label("trash"),
+    ).one()
+
+    return {
+        "all": counts.all,
+        "login": counts.login,
+        "card": counts.card,
+        "note": counts.note,
+        "identity": counts.identity,
+        "favourites": counts.favourites,
+        "trash": counts.trash,
+    }
+
+
 def _item_to_dict(item) -> dict:
     """Full serialisation including encrypted_data — used for single-item responses."""
     return {
@@ -47,6 +111,8 @@ def _item_to_dict(item) -> dict:
         "encrypted_data": item.encrypted_data,
         "favicon_url": item.favicon_url,
         "is_favourite": item.is_favourite,
+        "is_deleted": item.is_deleted,
+        "deleted_at": item.deleted_at.isoformat() if item.deleted_at else None,
         "created_at": item.created_at.isoformat() if item.created_at else None,
         "updated_at": item.updated_at.isoformat() if item.updated_at else None,
     }
@@ -60,6 +126,8 @@ def _item_to_summary_dict(item) -> dict:
         "category": item.category,
         "favicon_url": item.favicon_url,
         "is_favourite": item.is_favourite,
+        "is_deleted": item.is_deleted,
+        "deleted_at": item.deleted_at.isoformat() if item.deleted_at else None,
         "created_at": item.created_at.isoformat() if item.created_at else None,
         "updated_at": item.updated_at.isoformat() if item.updated_at else None,
     }
@@ -103,7 +171,11 @@ def export_vault(
     db: Annotated[Session, Depends(get_db)],
     current_user: DBUser,
 ):
-    items = db.query(VaultItem).filter(VaultItem.user_id == current_user.id).all()
+    items = (
+        db.query(VaultItem)
+        .filter(VaultItem.user_id == current_user.id, VaultItem.is_deleted.is_(False))
+        .all()
+    )
 
     _log_action(db, current_user.id, "VAULT_EXPORT", request)
     db.commit()
@@ -140,6 +212,7 @@ def list_items(
     category: Annotated[Optional[Literal["login", "card", "note", "identity"]], Query()] = None,
     search: Annotated[Optional[str], Query(max_length=128)] = None,
     favourites_only: Annotated[bool, Query()] = False,
+    deleted_only: Annotated[bool, Query()] = False,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = 50,
 ):
@@ -152,7 +225,7 @@ def list_items(
     # Skip caching for search queries (low repetition, unpredictable key space)
     if not clean_search:
         cached = get_cached_vault_list(
-            user_id, category, clean_search, favourites_only, page, page_size
+            user_id, category, clean_search, favourites_only, deleted_only, page, page_size
         )
         if cached is not None:
             logger.debug(f"vault:list cache HIT user={user_id}")
@@ -172,9 +245,11 @@ def list_items(
         # individual items via GET /vault/{id} when ciphertext is needed.
         VaultItem.favicon_url,
         VaultItem.is_favourite,
+        VaultItem.is_deleted,
+        VaultItem.deleted_at,
         VaultItem.created_at,
         VaultItem.updated_at,
-    ).filter(VaultItem.user_id == current_user.id)
+    ).filter(VaultItem.user_id == current_user.id, VaultItem.is_deleted.is_(deleted_only))
 
     if category:
         q = q.filter(VaultItem.category == category)
@@ -198,16 +273,25 @@ def list_items(
         "page": page,
         "page_size": page_size,
         "total_pages": -(-total // page_size),
+        "sidebar_counts": None if clean_search else _sidebar_counts(db, current_user.id),
     }
 
     if not clean_search:
         set_cached_vault_list(
-            user_id, category, clean_search, favourites_only, page, page_size, result
+            user_id, category, clean_search, favourites_only, deleted_only, page, page_size, result
         )
         etag = _make_etag(result)
         response.headers["ETag"] = etag
 
     return result
+
+
+@router.get("/stats", response_model=VaultSidebarCountsResponse)
+def get_sidebar_counts(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: CurrentUser,
+):
+    return _sidebar_counts(db, current_user.id)
 
 
 # Get single item — cached, includes encrypted_data
@@ -261,7 +345,7 @@ def create_item(
     # Enforce per-user vault item limit to prevent DB storage abuse
     count = (
         db.query(func.count(VaultItem.id))
-        .filter(VaultItem.user_id == current_user.id)
+        .filter(VaultItem.user_id == current_user.id, VaultItem.is_deleted.is_(False))
         .scalar()
     )
     if count >= VAULT_ITEM_LIMIT:
@@ -351,9 +435,71 @@ def delete_item(
     if not item:
         raise HTTPException(status_code=404, detail=ITEM_NOT_FOUND_MSG)
 
+    item.is_deleted = True
+    item.deleted_at = datetime.now(timezone.utc)
+    db.commit()
+
+    invalidate_vault_item(user_id, item_key)
+    invalidate_vault_list(user_id)
+    logger.debug(f"vault cache busted (soft delete) user={user_id} item={item_key}")
+
+
+@router.post(
+    "/{item_id}/restore",
+    response_model=VaultItemResponse,
+    responses={404: {"description": ITEM_NOT_FOUND_MSG}},
+)
+def restore_item(
+    item_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: CurrentUser,
+):
+    user_id = str(current_user.id)
+    item_key = str(item_id)
+
+    item = (
+        db.query(VaultItem)
+        .filter(VaultItem.id == item_id, VaultItem.user_id == current_user.id)
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail=ITEM_NOT_FOUND_MSG)
+
+    item.is_deleted = False
+    item.deleted_at = None
+    db.commit()
+    db.refresh(item)
+
+    invalidate_vault_item(user_id, item_key)
+    invalidate_vault_list(user_id)
+    data = _item_to_dict(item)
+    set_cached_vault_item(user_id, item_key, data)
+    return data
+
+
+@router.delete(
+    "/{item_id}/permanent",
+    status_code=204,
+    responses={404: {"description": ITEM_NOT_FOUND_MSG}},
+)
+def delete_item_permanently(
+    item_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: CurrentUser,
+):
+    user_id = str(current_user.id)
+    item_key = str(item_id)
+
+    item = (
+        db.query(VaultItem)
+        .filter(VaultItem.id == item_id, VaultItem.user_id == current_user.id)
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail=ITEM_NOT_FOUND_MSG)
+
     db.delete(item)
     db.commit()
 
     invalidate_vault_item(user_id, item_key)
     invalidate_vault_list(user_id)
-    logger.debug(f"vault cache busted (delete) user={user_id} item={item_key}")
