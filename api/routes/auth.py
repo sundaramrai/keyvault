@@ -4,7 +4,9 @@ routes/auth.py — Auth routes with Redis cache integration.
 
 import os
 import uuid
+import secrets
 import logging
+import hmac
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 
@@ -12,19 +14,29 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, Cookie
 from jose import JWTError
 from sqlalchemy.orm import Session
 
-from database import get_db, User, AuditLog, RefreshToken
+from database import get_db, User, AuditLog, RefreshToken, VaultItem, AuthToken
 from crypto import (
     hash_password,
-    verify_password,
     create_access_token,
     create_refresh_token,
     decode_token,
     hash_refresh_token,
-    generate_salt,
     REFRESH_TOKEN_EXPIRE_DAYS,
 )
-from schemas import RegisterRequest, LoginRequest, TokenResponse, UserResponse
-from deps import get_current_user_from_db
+from schemas import (
+    RegisterRequest,
+    LoginChallengeRequest,
+    LoginChallengeResponse,
+    LoginRequest,
+    TokenResponse,
+    UserResponse,
+    VerifyEmailRequest,
+    UpdateProfileRequest,
+    ChangeMasterPasswordRequest,
+    DeleteAccountRequest,
+    MessageResponse,
+)
+from deps import get_current_user_from_db, DBUser
 from cache import (
     get_cached_vault_salt,
     set_cached_vault_salt,
@@ -38,14 +50,19 @@ from cache import (
     set_cached_user,
 )
 from limiter import limiter
+from mailer import send_email, build_app_url
 
 logger = logging.getLogger(__name__)
+
+INVALID_EMAIL_OR_PASSWORD = "Invalid email or password"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 IS_PROD = os.getenv("ENVIRONMENT", "production") == "production"
 
+AUTH_COOKIE_PATH = "/"
 _RT_TTL_SECONDS = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
+EMAIL_VERIFY_EXPIRE_HOURS = 24
 
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
@@ -57,7 +74,17 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
         secure=IS_PROD,
         samesite="none" if IS_PROD else "lax",  # none required for cross-origin
         max_age=_RT_TTL_SECONDS,
-        path="/api/auth",
+        path=AUTH_COOKIE_PATH,
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key="refresh_token",
+        path=AUTH_COOKIE_PATH,
+        httponly=True,
+        secure=IS_PROD,
+        samesite="none" if IS_PROD else "lax",
     )
 
 
@@ -77,15 +104,7 @@ def _warm_caches(user: User, token_hash: str) -> None:
     user_id = str(user.id)
     set_cached_user(
         user_id,
-        {
-            "id": user_id,
-            "email": user.email,
-            "full_name": user.full_name,
-            "vault_salt": user.vault_salt,
-            "master_hint": user.master_hint,
-            "created_at": user.created_at.isoformat() if user.created_at else None,
-            "is_active": user.is_active,
-        },
+        _user_cache_dict(user),
     )
     prime_vault_salt(user_id, user.vault_salt)
     cache_refresh_token_valid(token_hash, user_id, _RT_TTL_SECONDS)
@@ -99,6 +118,77 @@ def _prune_revoked_tokens(db: Session, user_id) -> None:
         RefreshToken.user_id == user_id,
         RefreshToken.revoked == True,
     ).delete(synchronize_session=False)
+
+
+def _hash_action_token(token: str) -> str:
+    return hash_refresh_token(token)
+
+
+def _user_cache_dict(user: User) -> dict:
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "full_name": user.full_name,
+        "vault_salt": user.vault_salt,
+        "master_password_verifier": user.master_password_verifier,
+        "master_hint": user.master_hint,
+        "email_verified": user.email_verified,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "is_active": user.is_active,
+    }
+
+
+def _issue_auth_token(
+    db: Session,
+    user_id,
+    purpose: str,
+    expires_at: datetime,
+) -> str:
+    raw_token = secrets.token_urlsafe(32)
+    db.add(
+        AuthToken(
+            user_id=user_id,
+            token_hash=_hash_action_token(raw_token),
+            purpose=purpose,
+            expires_at=expires_at,
+        )
+    )
+    return raw_token
+
+
+def _consume_auth_token(
+    db: Session,
+    raw_token: str,
+    purpose: str,
+) -> AuthToken:
+    stored = (
+        db.query(AuthToken)
+        .filter(
+            AuthToken.token_hash == _hash_action_token(raw_token),
+            AuthToken.purpose == purpose,
+            AuthToken.consumed_at.is_(None),
+            AuthToken.expires_at > datetime.now(timezone.utc),
+        )
+        .first()
+    )
+    if not stored:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    stored.consumed_at = datetime.now(timezone.utc)
+    return stored
+
+
+def _send_verification_email(user: User, raw_token: str) -> bool:
+    verify_url = build_app_url(f"/auth?mode=verify-email&token={raw_token}")
+    return send_email(
+        user.email,
+        "Verify your Cipheria email",
+        (
+            "Welcome to Cipheria.\n\n"
+            f"Verify your email by opening:\n{verify_url}\n\n"
+            f"This link expires in {EMAIL_VERIFY_EXPIRE_HOURS} hours."
+        ),
+    )
 
 
 # Register
@@ -121,10 +211,11 @@ def register(
 
     user = User(
         email=body.email,
-        hashed_password=hash_password(body.password),
+        hashed_password=hash_password(body.master_password_verifier),
         full_name=body.full_name,
         master_hint=body.master_hint,
-        vault_salt=generate_salt(32),
+        vault_salt=body.vault_salt,
+        master_password_verifier=body.master_password_verifier,
     )
     db.add(user)
     db.flush()
@@ -140,11 +231,19 @@ def register(
             expires_at=datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
         )
     )
+    verify_token = _issue_auth_token(
+        db,
+        user.id,
+        "verify_email",
+        datetime.now(timezone.utc) + timedelta(hours=EMAIL_VERIFY_EXPIRE_HOURS),
+    )
     _log_action(db, user.id, "REGISTER", request)
     db.commit()
 
     _warm_caches(user, token_hash)
     _set_refresh_cookie(response, refresh_token)
+    if not _send_verification_email(user, verify_token):
+        logger.warning("REGISTER verification email not delivered user=%s", user.id)
 
     logger.info(f"REGISTER user={user.id}")
     return TokenResponse(access_token=access_token, vault_salt=user.vault_salt)
@@ -153,9 +252,28 @@ def register(
 # Login
 
 @router.post(
+    "/login/challenge",
+    response_model=LoginChallengeResponse,
+    responses={401: {"description": "Invalid email or password"}},
+)
+@limiter.limit("20/minute")
+def login_challenge(
+    body: LoginChallengeRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+):
+    user = db.query(User).filter(User.email == body.email).first()
+    if not user or not user.is_active or not user.master_password_verifier:
+        raise HTTPException(status_code=401, detail=INVALID_EMAIL_OR_PASSWORD)
+    return LoginChallengeResponse(vault_salt=user.vault_salt)
+
+@router.post(
     "/login",
     response_model=TokenResponse,
-    responses={401: {"description": "Invalid email or password"}},
+    responses={
+        400: {"description": "Account must be migrated or recreated"},
+        401: {"description": "Invalid email or password"},
+    },
 )
 @limiter.limit("10/minute")
 def login(
@@ -167,8 +285,16 @@ def login(
     # Always hit DB for login — must verify the bcrypt hash
     user = db.query(User).filter(User.email == body.email).first()
 
-    if not user or not user.is_active or not verify_password(body.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail=INVALID_EMAIL_OR_PASSWORD)
+
+    if not user.master_password_verifier:
+        raise HTTPException(
+            status_code=400,
+            detail="This account was created before the single master-password flow and must be migrated or recreated",
+        )
+    if not hmac.compare_digest(user.master_password_verifier, body.master_password_verifier):
+        raise HTTPException(status_code=401, detail=INVALID_EMAIL_OR_PASSWORD)
 
     access_token = create_access_token({"sub": str(user.id)})
     refresh_token = create_refresh_token({"sub": str(user.id)})
@@ -210,28 +336,32 @@ def refresh(
     db: Annotated[Session, Depends(get_db)],
     refresh_token: Annotated[Optional[str], Cookie()] = None,
 ):
+    def _reject_refresh(detail: str) -> None:
+        _clear_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail=detail)
+
     if not refresh_token:
-        raise HTTPException(status_code=401, detail="No refresh token")
+        _reject_refresh("No refresh token")
 
     try:
         payload = decode_token(refresh_token)
         if payload.get("type") != "refresh":
-            raise HTTPException(status_code=401, detail="Invalid token type")
+            _reject_refresh("Invalid token type")
         user_id = payload.get("sub")
         jti = payload.get("jti", "")
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        _reject_refresh("Invalid refresh token")
 
     # Validate sub is a well-formed UUID — malformed values cause DB errors
     if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        _reject_refresh("Invalid token")
     try:
         uuid.UUID(user_id)
     except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        _reject_refresh("Invalid token")
 
     if is_token_blacklisted(jti):
-        raise HTTPException(status_code=401, detail="Refresh token revoked")
+        _reject_refresh("Refresh token revoked")
 
     token_hash = hash_refresh_token(refresh_token)
     cached_rt = get_cached_refresh_token(token_hash)
@@ -254,7 +384,7 @@ def refresh(
             .first()
         )
         if not stored:
-            raise HTTPException(status_code=401, detail="Refresh token expired or revoked")
+            _reject_refresh("Refresh token expired or revoked")
 
     # Revocation order: DB first, then cache
     # Persisting to DB first ensures the token is durably revoked even if the
@@ -272,7 +402,7 @@ def refresh(
     user = db.query(User).filter(User.id == user_id).first()
     if not user or not user.is_active:
         db.commit()  # persist DB revocation even if account is gone/disabled
-        raise HTTPException(status_code=401, detail="Account not found or disabled")
+        _reject_refresh("Account not found or disabled")
 
     new_access = create_access_token({"sub": user_id})
     new_refresh = create_refresh_token({"sub": user_id})
@@ -332,7 +462,7 @@ def logout(
 
     response.delete_cookie(
         key="refresh_token",
-        path="/api/auth",
+        path=AUTH_COOKIE_PATH,
         httponly=True,
         secure=IS_PROD,
         samesite="none" if IS_PROD else "lax",
@@ -340,9 +470,204 @@ def logout(
     return {"message": "Logged out"}
 
 
+@router.post(
+    "/verify-email",
+    response_model=MessageResponse,
+    responses={400: {"description": "Invalid or expired token or account not found"}},
+)
+@limiter.limit("20/minute")
+def verify_email(
+    body: VerifyEmailRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+):
+    token = _consume_auth_token(db, body.token, "verify_email")
+    user = db.query(User).filter(User.id == token.user_id).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Account not found")
+
+    user.email_verified = True
+    _log_action(db, user.id, "EMAIL_VERIFIED", request)
+    db.commit()
+
+    set_cached_user(
+        str(user.id),
+        _user_cache_dict(user),
+    )
+    return MessageResponse(message="Email verified")
+
+
+@router.post(
+    "/verify-email/request",
+    response_model=MessageResponse,
+    responses={
+        503: {"description": "Verification email could not be sent. Please try again later."}
+    },
+)
+@limiter.limit("5/minute")
+def resend_verification_email(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: DBUser,
+):
+    if current_user.email_verified:
+        return MessageResponse(message="Email is already verified")
+
+    raw_token = _issue_auth_token(
+        db,
+        current_user.id,
+        "verify_email",
+        datetime.now(timezone.utc) + timedelta(hours=EMAIL_VERIFY_EXPIRE_HOURS),
+    )
+    _log_action(db, current_user.id, "VERIFY_EMAIL_SENT", request)
+    if not _send_verification_email(current_user, raw_token):
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail="Verification email could not be sent. Please try again later.",
+        )
+    db.commit()
+    return MessageResponse(message="Verification email sent")
+
+
+@router.post(
+    "/forgot-password",
+    response_model=MessageResponse,
+    responses={400: {"description": "Master password reset is not supported in zero-knowledge mode"}},
+)
+@limiter.limit("5/minute")
+def forgot_password(
+    request: Request,
+):
+    raise HTTPException(
+        status_code=400,
+        detail="Master password reset is not supported in zero-knowledge mode",
+    )
+
+
+@router.post(
+    "/reset-password",
+    response_model=MessageResponse,
+    responses={400: {"description": "Invalid or expired token or account not found"}},
+)
+@limiter.limit("10/minute")
+def reset_password(
+    request: Request,
+):
+    raise HTTPException(
+        status_code=400,
+        detail="Master password reset is not supported in zero-knowledge mode",
+    )
+
+
+@router.patch(
+    "/profile",
+    response_model=UserResponse,
+    responses={400: {"description": "Master password payload contains an unknown item"}},
+)
+@limiter.limit("30/minute")
+def update_profile(
+    body: UpdateProfileRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: DBUser,
+):
+    current_user.full_name = body.full_name
+    current_user.master_hint = body.master_hint
+    _log_action(db, current_user.id, "PROFILE_UPDATED", request)
+    db.commit()
+    db.refresh(current_user)
+
+    set_cached_user(
+        str(current_user.id),
+        _user_cache_dict(current_user),
+    )
+    return current_user
+
+
+@router.patch(
+    "/master-password",
+    response_model=UserResponse,
+    responses={400: {"description": "All active vault items must be re-encrypted before changing the master password or master password payload contains an unknown item"}},
+)
+@limiter.limit("5/minute")
+def change_master_password(
+    body: ChangeMasterPasswordRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: DBUser,
+):
+    active_items = (
+        db.query(VaultItem)
+        .filter(VaultItem.user_id == current_user.id, VaultItem.is_deleted.is_(False))
+        .all()
+    )
+    if len(active_items) != len(body.items):
+        raise HTTPException(
+            status_code=400,
+            detail="All active vault items must be re-encrypted before changing the master password",
+        )
+
+    item_map = {str(item.id): item for item in active_items}
+    for update in body.items:
+        item = item_map.get(str(update.id))
+        if not item:
+            raise HTTPException(status_code=400, detail="Master password payload contains an unknown item")
+        item.encrypted_data = update.encrypted_data
+
+    current_user.vault_salt = body.new_vault_salt
+    current_user.master_password_verifier = body.new_master_password_verifier
+    current_user.master_hint = body.master_hint
+    _log_action(db, current_user.id, "MASTER_PASSWORD_CHANGED", request)
+    db.commit()
+    db.refresh(current_user)
+
+    invalidate_user(str(current_user.id))
+    invalidate_all_vault(str(current_user.id))
+    return current_user
+
+
+@router.delete(
+    "/account",
+    response_model=MessageResponse,
+    responses={401: {"description": "Invalid password"}, 400: {"description": "Account not found"}},
+)
+@limiter.limit("3/minute")
+def delete_account(
+    body: DeleteAccountRequest,
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: DBUser,
+):
+    if not current_user.master_password_verifier:
+        raise HTTPException(status_code=400, detail="Account is missing a master password verifier")
+    if not hmac.compare_digest(body.master_password_verifier, current_user.master_password_verifier):
+        raise HTTPException(status_code=401, detail="Invalid master password")
+
+    user_id = current_user.id
+    _log_action(db, user_id, "ACCOUNT_DELETED", request)
+
+    db.query(AuthToken).filter(AuthToken.user_id == user_id).delete(synchronize_session=False)
+    db.query(RefreshToken).filter(RefreshToken.user_id == user_id).delete(synchronize_session=False)
+    db.query(VaultItem).filter(VaultItem.user_id == user_id).delete(synchronize_session=False)
+    db.query(AuditLog).filter(AuditLog.user_id == user_id).delete(synchronize_session=False)
+    db.query(User).filter(User.id == user_id).delete(synchronize_session=False)
+    db.commit()
+
+    invalidate_user(str(user_id))
+    invalidate_all_vault(str(user_id))
+    _clear_refresh_cookie(response)
+    return MessageResponse(message="Account deleted")
+
+
 # Me / Vault-salt
 
-@router.get("/me", response_model=UserResponse)
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    responses={401: {"description": "Not authenticated"}},
+)
 @limiter.limit("60/minute")
 def me(
     request: Request,
