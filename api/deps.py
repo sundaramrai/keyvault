@@ -53,8 +53,10 @@ class CachedUser(BaseModel):
     email: str
     full_name: Optional[str] = None
     is_active: bool = True
+    email_verified: bool = False
     master_hint: Optional[str] = None
     vault_salt: str
+    master_password_verifier: Optional[str] = None
     created_at: Optional[datetime] = None
 
 
@@ -98,8 +100,10 @@ def get_current_user_from_db(
                 email=cached.get("email", ""),
                 full_name=cached.get("full_name"),
                 is_active=cached.get("is_active", True),
+                email_verified=cached.get("email_verified", False),
                 master_hint=cached.get("master_hint"),
                 vault_salt=cached.get("vault_salt", ""),
+                master_password_verifier=cached.get("master_password_verifier"),
                 created_at=datetime.fromisoformat(cached["created_at"])
                 if cached.get("created_at")
                 else None,
@@ -129,13 +133,25 @@ def get_current_user_from_db(
             "email": user.email,
             "full_name": user.full_name,
             "is_active": user.is_active,
+            "email_verified": user.email_verified,
             "master_hint": user.master_hint,
             "vault_salt": user.vault_salt,
+            "master_password_verifier": user.master_password_verifier,
             "created_at": user.created_at.isoformat() if user.created_at else None,
         },
     )
     return user
 
 
+def get_current_db_user(
+    token_user: Annotated[TokenUser, Depends(get_current_token_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> User:
+    user = db.query(User).filter(User.id == token_user.id).first()
+    if not user or not user.is_active:
+        raise auth_exception()
+    return user
+
+
 CurrentUser = Annotated[TokenUser, Depends(get_current_token_user)]
-DBUser = Annotated[User, Depends(get_current_user_from_db)]
+DBUser = Annotated[User, Depends(get_current_db_user)]
