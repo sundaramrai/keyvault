@@ -124,6 +124,8 @@ export const vaultApi = {
   list: (params?: { category?: string; search?: string; favourites_only?: boolean; deleted_only?: boolean; page?: number; page_size?: number }, signal?: AbortSignal) =>
     api.get('/api/vault', { params, signal }),
 
+  stats: () => api.get('/api/vault/stats'),
+
   get: (id: string) => api.get(`/api/vault/${id}`),
 
   create: (data: {
