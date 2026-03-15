@@ -19,13 +19,6 @@ from routes.vault import router as vault_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if os.getenv("ENVIRONMENT", "production") == "development":
-        from database import create_tables
-        try:
-            create_tables()
-        except Exception as e:
-            logger.warning(f"Could not create tables: {e}")
-
     from cache import cache_ping, get_redis
     if get_redis():
         ok = cache_ping()
