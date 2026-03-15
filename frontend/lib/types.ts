@@ -33,8 +33,21 @@ export interface VaultItem {
     encrypted_data?: string;
     favicon_url?: string;
     is_favourite: boolean;
+    is_deleted?: boolean;
+    deleted_at?: string | null;
     created_at: string;
     updated_at: string;
     /** Populated client-side after decryption */
     decrypted?: DecryptedPayload;
+}
+
+export interface UserProfile {
+    id: string;
+    email: string;
+    full_name?: string;
+    vault_salt: string;
+    master_password_verifier?: string | null;
+    master_hint?: string;
+    email_verified: boolean;
+    created_at?: string;
 }
