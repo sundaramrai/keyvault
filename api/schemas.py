@@ -145,15 +145,6 @@ class VaultItemResponse(BaseModel):
         from_attributes = True
 
 
-class PaginatedVaultResponse(BaseModel):
-    items: List[VaultItemSummary]
-    total: int
-    page: int
-    page_size: int
-    total_pages: int
-    sidebar_counts: Optional[VaultSidebarCountsResponse] = None
-
-
 class VaultSidebarCountsResponse(BaseModel):
     all: int
     login: int
@@ -162,3 +153,12 @@ class VaultSidebarCountsResponse(BaseModel):
     identity: int
     favourites: int
     trash: int
+
+
+class PaginatedVaultResponse(BaseModel):
+    items: List[VaultItemSummary]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    sidebar_counts: Optional[VaultSidebarCountsResponse] = None
