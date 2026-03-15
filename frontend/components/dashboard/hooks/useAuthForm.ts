@@ -5,18 +5,25 @@ import { toastService } from '@/lib/toast';
 import { parseApiError } from '@/lib/errors';
 import { authApi } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
-import { passwordStrength } from '@/lib/crypto';
+import { deriveKey, deriveMasterPasswordVerifier, generateSaltHex, passwordStrength } from '@/lib/crypto';
 
 type Tab = 'login' | 'register';
 
 interface AuthForm {
     email: string;
-    password: string;
+    masterPassword: string;
+    confirmMasterPassword: string;
     fullName: string;
     masterHint: string;
 }
 
-const EMPTY_FORM: AuthForm = { email: '', password: '', fullName: '', masterHint: '' };
+const EMPTY_FORM: AuthForm = {
+    email: '',
+    masterPassword: '',
+    confirmMasterPassword: '',
+    fullName: '',
+    masterHint: '',
+};
 
 /**
  * useAuthForm
@@ -25,14 +32,14 @@ const EMPTY_FORM: AuthForm = { email: '', password: '', fullName: '', masterHint
  */
 export function useAuthForm(initialTab: Tab = 'login') {
     const router = useRouter();
-    const { setAuth } = useAuthStore();
+    const { setAuth, setVaultKey } = useAuthStore();
 
     const [tab, setTab] = useState<Tab>(initialTab);
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [form, setForm] = useState<AuthForm>(EMPTY_FORM);
 
-    const strength = tab === 'register' ? passwordStrength(form.password) : null;
+    const strength = tab === 'register' ? passwordStrength(form.masterPassword) : null;
 
     const toggleTab = () => {
         setTab((t) => (t === 'login' ? 'register' : 'login'));
@@ -50,20 +57,41 @@ export function useAuthForm(initialTab: Tab = 'login') {
         setLoading(true);
         try {
             if (tab === 'register') {
+                if (!form.masterPassword) {
+                    toastService.error('Enter a master password');
+                    return;
+                }
+                if (form.masterPassword !== form.confirmMasterPassword) {
+                    toastService.error('Master password confirmation does not match');
+                    return;
+                }
+                const vaultSalt = generateSaltHex();
+                const key = await deriveKey(form.masterPassword, vaultSalt);
+                const masterPasswordVerifier = await deriveMasterPasswordVerifier(form.masterPassword, vaultSalt);
                 const { data } = await authApi.register(
                     form.email,
-                    form.password,
+                    vaultSalt,
+                    masterPasswordVerifier,
                     form.fullName,
                     form.masterHint,
                 );
                 const { data: user } = await authApi.me();
                 // setAuth is the single source of truth for the access token
                 setAuth(user, data.access_token);
-                toastService.success('Account created! Set your master password to unlock the vault.');
+                setVaultKey(key);
+                toastService.success('Account created. Check your email to verify the account.');
             } else {
-                const { data } = await authApi.login(form.email, form.password);
+                if (!form.masterPassword) {
+                    toastService.error('Enter your master password');
+                    return;
+                }
+                const { data: challenge } = await authApi.loginChallenge(form.email);
+                const key = await deriveKey(form.masterPassword, challenge.vault_salt);
+                const masterPasswordVerifier = await deriveMasterPasswordVerifier(form.masterPassword, challenge.vault_salt);
+                const { data } = await authApi.login(form.email, masterPasswordVerifier);
                 const { data: user } = await authApi.me();
                 setAuth(user, data.access_token);
+                setVaultKey(key);
                 toastService.success('Welcome back!');
             }
             router.push('/dashboard');
@@ -78,7 +106,7 @@ export function useAuthForm(initialTab: Tab = 'login') {
     if (loading) {
         submitLabel = 'Please wait...';
     } else if (tab === 'login') {
-        submitLabel = 'Sign In';
+        submitLabel = 'Unlock Vault';
     } else {
         submitLabel = 'Create Account';
     }
