@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { AuthSession, PaginatedVaultItems, UserProfile, VaultItem } from '@/lib/types';
 
 // In dev: empty string → Next.js proxy forwards /api/* to the backend (keeps cookies same-origin).
 // In prod: set NEXT_PUBLIC_API_URL to your API origin (e.g. https://api.example.com).
@@ -8,6 +9,15 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 let _accessToken: string | null = null;
 export const setAccessToken = (token: string | null) => { _accessToken = token; };
 export const getAccessToken = () => _accessToken;
+
+const AUTO_REFRESH_EXCLUDED_PATHS = [
+  '/api/auth/refresh',
+  '/api/auth/login',
+  '/api/auth/login/challenge',
+  '/api/auth/register',
+  '/api/auth/verify-email',
+  '/api/auth/unlock',
+] as const;
 
 /**
  * Refresh mutex — ensures only one refresh call is in-flight at a time.
@@ -38,8 +48,11 @@ api.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config;
-    const isRefreshCall = original?.url?.includes('/api/auth/refresh');
-    if (error.response?.status === 401 && !original._retry && !isRefreshCall) {
+    const requestUrl = original?.url ?? '';
+    const shouldSkipAutoRefresh = AUTO_REFRESH_EXCLUDED_PATHS.some((path) =>
+      requestUrl.includes(path),
+    );
+    if (error.response?.status === 401 && !original._retry && !shouldSkipAutoRefresh) {
       original._retry = true;
       try {
         if (!_refreshPromise) {
@@ -76,7 +89,7 @@ export const authApi = {
     masterPasswordVerifier: string,
     fullName?: string,
     masterHint?: string,
-  ) => api.post('/api/auth/register', {
+  ) => api.post<AuthSession>('/api/auth/register', {
     email,
     vault_salt: vaultSalt,
     master_password_verifier: masterPasswordVerifier,
@@ -85,18 +98,18 @@ export const authApi = {
   }),
 
   loginChallenge: (email: string) =>
-    api.post('/api/auth/login/challenge', { email }),
+    api.post<{ vault_salt: string }>('/api/auth/login/challenge', { email }),
 
   login: (email: string, masterPasswordVerifier: string) =>
-    api.post('/api/auth/login', { email, master_password_verifier: masterPasswordVerifier }),
+    api.post<AuthSession>('/api/auth/login', { email, master_password_verifier: masterPasswordVerifier }),
 
   refresh: () =>
-    api.post('/api/auth/refresh'),
+    api.post<AuthSession>('/api/auth/refresh'),
 
   logout: () =>
     api.post('/api/auth/logout'),
 
-  me: () => api.get('/api/auth/me'),
+  me: () => api.get<UserProfile>('/api/auth/me'),
 
   requestEmailVerification: () =>
     api.post('/api/auth/verify-email/request'),
@@ -104,20 +117,20 @@ export const authApi = {
   verifyEmail: (token: string) =>
     api.post('/api/auth/verify-email', { token }),
 
-  verifyMasterPassword: (masterPasswordVerifier: string) =>
-    api.post('/api/auth/verify-master-password', {
+  unlock: (masterPasswordVerifier: string) =>
+    api.post<PaginatedVaultItems<VaultItem>>('/api/auth/unlock', {
       master_password_verifier: masterPasswordVerifier,
     }),
 
   updateProfile: (data: { full_name?: string | null; master_hint?: string | null }) =>
-    api.patch('/api/auth/profile', data),
+    api.patch<UserProfile>('/api/auth/profile', data),
 
   changeMasterPassword: (data: {
     new_vault_salt: string;
     new_master_password_verifier: string;
     master_hint?: string | null;
     items: Array<{ id: string; encrypted_data: string }>;
-  }) => api.patch('/api/auth/master-password', data),
+  }) => api.patch<UserProfile>('/api/auth/master-password', data),
 
   deleteAccount: (masterPasswordVerifier: string) =>
     api.delete('/api/auth/account', { data: { master_password_verifier: masterPasswordVerifier } }),
@@ -127,11 +140,9 @@ export const authApi = {
 
 export const vaultApi = {
   list: (params?: { category?: string; search?: string; favourites_only?: boolean; deleted_only?: boolean; page?: number; page_size?: number }, signal?: AbortSignal) =>
-    api.get('/api/vault', { params, signal }),
+    api.get<PaginatedVaultItems<VaultItem>>('/api/vault', { params, signal }),
 
-  stats: () => api.get('/api/vault/stats'),
-
-  get: (id: string) => api.get(`/api/vault/${id}`),
+  get: (id: string) => api.get<VaultItem>(`/api/vault/${id}`),
 
   create: (data: {
     name: string;
@@ -139,7 +150,7 @@ export const vaultApi = {
     encrypted_data: string;
     favicon_url?: string;
     is_favourite?: boolean;
-  }) => api.post('/api/vault', data),
+  }) => api.post<VaultItem>('/api/vault', data),
 
   update: (id: string, data: Partial<{
     name: string;
@@ -147,7 +158,7 @@ export const vaultApi = {
     encrypted_data: string;
     favicon_url: string;
     is_favourite: boolean;
-  }>) => api.patch(`/api/vault/${id}`, data),
+  }>) => api.patch<VaultItem>(`/api/vault/${id}`, data),
 
   delete: (id: string) => api.delete(`/api/vault/${id}`),
 
