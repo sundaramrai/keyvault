@@ -7,7 +7,6 @@ Cache keys and TTLs:
   vault:item:{user_id}:{item_id}    10 min
   rt:valid:{token_hash}             until token expiry
   rt:revoked:{jti}                  until token expiry
-  vault_salt:{user_id}              60 min
 
 Vault ciphertext cached in Redis is identical to what is stored in the DB.
 User profile cache never includes hashed_password.
@@ -29,9 +28,7 @@ logger = logging.getLogger(__name__)
 TTL_USER_PROFILE = 15 * 60
 TTL_VAULT_LIST = 5 * 60
 TTL_VAULT_ITEM = 10 * 60
-TTL_VAULT_SALT = 60 * 60
 TTL_RT_VALID = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
-TTL_TOKEN_BLACKLIST = (REFRESH_TOKEN_EXPIRE_DAYS + 1) * 24 * 3600
 
 
 def _build_redis_client() -> Optional[redis.Redis]:
@@ -133,18 +130,7 @@ def set_cached_user(user_id: str, user_dict: dict) -> None:
 
 
 def invalidate_user(user_id: str) -> None:
-    _delete(f"user:{user_id}", f"vault_salt:{user_id}")
-
-
-# Vault salt
-
-def get_cached_vault_salt(user_id: str) -> Optional[str]:
-    data = _get(f"vault_salt:{user_id}")
-    return data.get("salt") if data else None
-
-
-def set_cached_vault_salt(user_id: str, salt: str) -> None:
-    _set(f"vault_salt:{user_id}", {"salt": salt}, TTL_VAULT_SALT)
+    _delete(f"user:{user_id}")
 
 
 # Vault list
@@ -218,16 +204,6 @@ def is_token_blacklisted(jti: str) -> bool:
     if _redis is None:
         return False
     return _get(f"rt:revoked:{jti}") is not None
-
-
-# Vault salt fast-path (used on vault unlock)
-
-def get_vault_salt_for_unlock(user_id: str) -> Optional[str]:
-    return get_cached_vault_salt(user_id)
-
-
-def prime_vault_salt(user_id: str, salt: str) -> None:
-    set_cached_vault_salt(user_id, salt)
 
 
 # Health
