@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { Shield, Lock, Zap, Globe, Key, ArrowRight, RefreshCw, Download } from 'lucide-react';
+import { Shield, Lock, Key, ArrowRight, RefreshCw, Download, Search, MailCheck } from 'lucide-react';
 
 export default function Page() {
   return (
@@ -17,7 +17,7 @@ export default function Page() {
         .nav-link-ghost { color: var(--text-secondary); border: 1px solid var(--border); }
         .nav-link-ghost:hover { color: var(--text-primary); border-color: var(--border-hover); background: var(--accent-dim); }
         .nav-link-primary { background: var(--accent); color: var(--accent-ink); font-weight: 600; letter-spacing: 0.02em; gap: 6px; }
-        .nav-link-primary:hover { background: color-mix(in srgb, var(--accent) 92%, black 8%); box-shadow: 0 4px 16px var(--accent-shadow-strong); }
+        .nav-link-primary:hover { background: var(--accent-hover); box-shadow: 0 4px 16px var(--accent-shadow-strong); }
         .hero-ctas { flex-direction: column; width: 100%; max-width: 340px; }
         @media (min-width: 480px) {
           .hero-ctas { flex-direction: row; width: auto; max-width: none; }
@@ -103,12 +103,12 @@ export default function Page() {
 
           <div className="features-grid">
             {[
-              { icon: Lock, title: 'AES-256-GCM', desc: 'Military-grade encryption derived from your master password — never stored, never sent.' },
-              { icon: Zap, title: 'Instant Autofill', desc: 'Browser extension detects login forms and fills your credentials in a single click.' },
-              { icon: Globe, title: 'Access Anywhere', desc: 'Syncs seamlessly across all your devices via a secure, serverless edge API.' },
-              { icon: Shield, title: 'Zero Knowledge', desc: 'All encryption happens client-side. The server only ever sees ciphertext.' },
-              { icon: RefreshCw, title: 'Password Generator', desc: 'Generate strong, random passwords with custom length and character rules.' },
-              { icon: Download, title: 'Vault Export', desc: 'Download your entire vault as JSON anytime. Your data is always yours.' },
+              { icon: Shield, title: 'Zero-Knowledge Vault', desc: 'Secrets are encrypted in the browser before they reach the API, so the server only stores ciphertext.' },
+              { icon: Lock, title: 'Single Master Password', desc: 'One master password unlocks your vault and derives your encryption key locally on your device.' },
+              { icon: Search, title: 'Fast Vault Search', desc: 'Filter logins, cards, notes, identities, favourites, and trash from one clean dashboard.' },
+              { icon: RefreshCw, title: 'Seamless Session Rotation', desc: 'Short-lived access tokens and rotating refresh cookies keep sessions smooth without exposing tokens to storage.' },
+              { icon: MailCheck, title: 'Email Verification', desc: 'New accounts can verify their email for added account integrity without changing the zero-knowledge model.' },
+              { icon: Download, title: 'Encrypted Export', desc: 'Export your vault as JSON whenever you want, keeping your data portable and under your control.' },
             ].map(({ icon: Icon, title, desc }) => (
               <div key={title} className="glass glass-hover" style={{ borderRadius: 'var(--radius-lg)', padding: 'clamp(18px, 3vw, 26px)' }}>
                 <div className="feature-card-inner" style={{ display: 'flex', flexDirection: 'row', gap: 14, alignItems: 'flex-start' }}>
