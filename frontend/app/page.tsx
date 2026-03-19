@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { Shield, Lock, Key, ArrowRight, RefreshCw, Download, Search, MailCheck } from 'lucide-react';
+import { Shield, Lock, Key, ArrowRight, RefreshCw, Download, EyeOff, TimerReset } from 'lucide-react';
 
 export default function Page() {
   return (
@@ -105,9 +105,9 @@ export default function Page() {
             {[
               { icon: Shield, title: 'Zero-Knowledge Vault', desc: 'Secrets are encrypted in the browser before they reach the API, so the server only stores ciphertext.' },
               { icon: Lock, title: 'Single Master Password', desc: 'One master password unlocks your vault and derives your encryption key locally on your device.' },
-              { icon: Search, title: 'Fast Vault Search', desc: 'Filter logins, cards, notes, identities, favourites, and trash from one clean dashboard.' },
+              { icon: EyeOff, title: 'Breach Check', desc: 'Check saved passwords against Have I Been Pwned without ever sending the full password to the service.' },
               { icon: RefreshCw, title: 'Seamless Session Rotation', desc: 'Short-lived access tokens and rotating refresh cookies keep sessions smooth without exposing tokens to storage.' },
-              { icon: MailCheck, title: 'Email Verification', desc: 'New accounts can verify their email for added account integrity without changing the zero-knowledge model.' },
+              { icon: TimerReset, title: 'Idle Auto-Lock', desc: 'The vault can lock itself after inactivity so your encryption key does not sit exposed in memory longer than needed.' },
               { icon: Download, title: 'Encrypted Export', desc: 'Export your vault as JSON whenever you want, keeping your data portable and under your control.' },
             ].map(({ icon: Icon, title, desc }) => (
               <div key={title} className="glass glass-hover" style={{ borderRadius: 'var(--radius-lg)', padding: 'clamp(18px, 3vw, 26px)' }}>
