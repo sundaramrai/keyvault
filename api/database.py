@@ -61,9 +61,6 @@ class User(Base):
     vault_salt = Column(
         String(64), nullable=False, default=lambda: uuid.uuid4().hex + uuid.uuid4().hex
     )
-    # Deterministic verifier derived client-side from the master password + salt.
-    # The server stores only this verifier, never the plaintext master password.
-    master_password_verifier = Column(String(64), nullable=True)
 
 
 class VaultItem(Base):
