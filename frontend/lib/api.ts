@@ -104,6 +104,11 @@ export const authApi = {
   verifyEmail: (token: string) =>
     api.post('/api/auth/verify-email', { token }),
 
+  verifyMasterPassword: (masterPasswordVerifier: string) =>
+    api.post('/api/auth/verify-master-password', {
+      master_password_verifier: masterPasswordVerifier,
+    }),
+
   updateProfile: (data: { full_name?: string | null; master_hint?: string | null }) =>
     api.patch('/api/auth/profile', data),
 
