@@ -32,7 +32,7 @@ const EMPTY_FORM: AuthForm = {
  */
 export function useAuthForm(initialTab: Tab = 'login') {
     const router = useRouter();
-    const { setAuth, setVaultKey } = useAuthStore();
+    const { completeAuth } = useAuthStore();
 
     const [tab, setTab] = useState<Tab>(initialTab);
     const [showPassword, setShowPassword] = useState(false);
@@ -76,9 +76,7 @@ export function useAuthForm(initialTab: Tab = 'login') {
                     form.masterHint,
                 );
                 const { data: user } = await authApi.me();
-                // setAuth is the single source of truth for the access token
-                setAuth(user, data.access_token);
-                setVaultKey(key);
+                completeAuth(user, data.access_token, key);
                 toastService.success('Account created. Check your email to verify the account.');
             } else {
                 if (!form.masterPassword) {
@@ -90,11 +88,10 @@ export function useAuthForm(initialTab: Tab = 'login') {
                 const masterPasswordVerifier = await deriveMasterPasswordVerifier(form.masterPassword, challenge.vault_salt);
                 const { data } = await authApi.login(form.email, masterPasswordVerifier);
                 const { data: user } = await authApi.me();
-                setAuth(user, data.access_token);
-                setVaultKey(key);
+                completeAuth(user, data.access_token, key);
                 toastService.success('Welcome back!');
             }
-            router.push('/dashboard');
+            router.replace('/dashboard');
         } catch (err: unknown) {
             toastService.error(parseApiError(err, 'Something went wrong'));
         } finally {
