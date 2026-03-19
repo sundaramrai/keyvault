@@ -12,7 +12,6 @@ and secure salt generation for client-side key derivation.
 import os
 import secrets
 import hashlib
-import base64
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -40,18 +39,15 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 30
 
 
-def _pre_hash(password: str) -> bytes:
-    # SHA-256 + base64 encode before bcrypt to safely handle passwords >72 bytes
-    digest = hashlib.sha256(password.encode()).digest()
-    return base64.b64encode(digest)
-
-
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(_pre_hash(password), bcrypt.gensalt(rounds=12)).decode()
+    # The server hashes the client-derived verifier, not the raw master password.
+    # That verifier is validated as a 64-character hex string, so bcrypt's
+    # 72-byte input limit is not a concern here.
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(_pre_hash(plain), hashed.encode())
+    return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode())
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
