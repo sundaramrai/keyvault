@@ -26,9 +26,14 @@
   --accent-border-focus: rgba(245, 158, 11, 0.4);
   --accent-shadow-soft: rgba(245, 158, 11, 0.1);
   --accent-shadow-strong: rgba(245, 158, 11, 0.3);
+  --accent-hover: #e89409;
+  --accent-pressed: #cf7f07;
   --warning-bg: rgba(245, 158, 11, 0.06);
   --warning-border: rgba(245, 158, 11, 0.15);
   --warning-text: rgba(245, 158, 11, 0.7);
+  --strength-weak: #f97316;
+  --strength-fair: #eab308;
+  --strength-strong: #84cc16;
   --selection-weak: rgba(245, 158, 11, 0.22);
   --skeleton-1: rgba(255, 255, 255, 0.04);
   --skeleton-2: rgba(255, 255, 255, 0.08);
@@ -103,9 +108,14 @@
   --accent-border-focus: rgba(217, 119, 6, 0.36);
   --accent-shadow-soft: rgba(217, 119, 6, 0.12);
   --accent-shadow-strong: rgba(217, 119, 6, 0.22);
+  --accent-hover: #c96f05;
+  --accent-pressed: #b45f05;
   --warning-bg: rgba(217, 119, 6, 0.08);
   --warning-border: rgba(217, 119, 6, 0.2);
   --warning-text: rgba(161, 98, 7, 0.82);
+  --strength-weak: #ea580c;
+  --strength-fair: #ca8a04;
+  --strength-strong: #65a30d;
   --selection-weak: rgba(217, 119, 6, 0.18);
   --skeleton-1: rgba(36, 22, 10, 0.08);
   --skeleton-2: rgba(36, 22, 10, 0.14);
@@ -338,14 +348,14 @@ h4 {
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 92%, black 8%);
+  background: var(--accent-hover);
   transform: translateY(-1px);
   box-shadow: 0 6px 20px var(--accent-shadow-strong), 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
 .btn-primary:active:not(:disabled) {
   transform: translateY(0);
-  background: color-mix(in srgb, var(--accent) 82%, black 18%);
+  background: var(--accent-pressed);
   box-shadow: none;
 }
 
