@@ -11,6 +11,7 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Cookie
 from jose import JWTError
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db, User, AuditLog, RefreshToken, VaultItem, AuthToken
@@ -37,18 +38,16 @@ from schemas import (
     DeleteAccountRequest,
     VerifyMasterPasswordRequest,
     MessageResponse,
+    UnlockedVaultResponse,
 )
 from deps import get_current_user_from_db, DBUser
 from cache import (
-    get_cached_vault_salt,
-    set_cached_vault_salt,
     get_cached_refresh_token,
     cache_refresh_token_valid,
     revoke_refresh_token_cache,
     is_token_blacklisted,
     invalidate_user,
     invalidate_all_vault,
-    prime_vault_salt,
     set_cached_user,
 )
 from limiter import limiter, get_client_ip
@@ -65,6 +64,7 @@ IS_PROD = os.getenv("ENVIRONMENT", "production") == "production"
 AUTH_COOKIE_PATH = "/"
 _RT_TTL_SECONDS = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
 EMAIL_VERIFY_EXPIRE_HOURS = 24
+UNLOCK_PAGE_SIZE = 50
 
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
@@ -108,7 +108,6 @@ def _warm_caches(user: User, token_hash: str) -> None:
         user_id,
         _user_cache_dict(user),
     )
-    prime_vault_salt(user_id, user.vault_salt)
     cache_refresh_token_valid(token_hash, user_id, _RT_TTL_SECONDS)
 
 
@@ -141,6 +140,121 @@ def _user_cache_dict(user: User) -> dict:
 
 def _verify_master_password(user: User, verifier: str) -> bool:
     return bool(user.hashed_password and verify_password(verifier, user.hashed_password))
+
+
+def _sidebar_counts(db: Session, user_id) -> dict:
+    counts = db.query(
+        func.count(VaultItem.id)
+        .filter(
+            VaultItem.user_id == user_id,
+            VaultItem.is_deleted.is_(False),
+        )
+        .label("all"),
+        func.count(VaultItem.id)
+        .filter(
+            VaultItem.user_id == user_id,
+            VaultItem.is_deleted.is_(False),
+            VaultItem.category == "login",
+        )
+        .label("login"),
+        func.count(VaultItem.id)
+        .filter(
+            VaultItem.user_id == user_id,
+            VaultItem.is_deleted.is_(False),
+            VaultItem.category == "card",
+        )
+        .label("card"),
+        func.count(VaultItem.id)
+        .filter(
+            VaultItem.user_id == user_id,
+            VaultItem.is_deleted.is_(False),
+            VaultItem.category == "note",
+        )
+        .label("note"),
+        func.count(VaultItem.id)
+        .filter(
+            VaultItem.user_id == user_id,
+            VaultItem.is_deleted.is_(False),
+            VaultItem.category == "identity",
+        )
+        .label("identity"),
+        func.count(VaultItem.id)
+        .filter(
+            VaultItem.user_id == user_id,
+            VaultItem.is_deleted.is_(False),
+            VaultItem.is_favourite.is_(True),
+        )
+        .label("favourites"),
+        func.count(VaultItem.id)
+        .filter(
+            VaultItem.user_id == user_id,
+            VaultItem.is_deleted.is_(True),
+        )
+        .label("trash"),
+    ).one()
+
+    return {
+        "all": counts.all,
+        "login": counts.login,
+        "card": counts.card,
+        "note": counts.note,
+        "identity": counts.identity,
+        "favourites": counts.favourites,
+        "trash": counts.trash,
+    }
+
+
+def _serialize_unlock_item(item: VaultItem) -> dict:
+    return {
+        "id": str(item.id),
+        "name": item.name,
+        "category": item.category,
+        "encrypted_data": item.encrypted_data,
+        "favicon_url": item.favicon_url,
+        "is_favourite": item.is_favourite,
+        "is_deleted": item.is_deleted,
+        "deleted_at": item.deleted_at.isoformat() if item.deleted_at else None,
+        "created_at": item.created_at.isoformat() if item.created_at else None,
+        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+    }
+
+
+def _build_auth_response(user: User, access_token: str) -> TokenResponse:
+    return TokenResponse(
+        access_token=access_token,
+        vault_salt=user.vault_salt,
+        user=UserResponse.model_validate(user),
+    )
+
+
+def _build_unlock_response(db: Session, user: User) -> UnlockedVaultResponse:
+    total = (
+        db.query(func.count(VaultItem.id))
+        .filter(
+            VaultItem.user_id == user.id,
+            VaultItem.is_deleted.is_(False),
+        )
+        .scalar()
+    ) or 0
+    rows = (
+        db.query(VaultItem)
+        .filter(
+            VaultItem.user_id == user.id,
+            VaultItem.is_deleted.is_(False),
+        )
+        .order_by(VaultItem.updated_at.desc())
+        .limit(UNLOCK_PAGE_SIZE)
+        .all()
+    )
+
+    return UnlockedVaultResponse(
+        items=[_serialize_unlock_item(item) for item in rows],
+        total=total,
+        page=1,
+        page_size=UNLOCK_PAGE_SIZE,
+        total_pages=-(-total // UNLOCK_PAGE_SIZE) if total else 0,
+        sidebar_counts=_sidebar_counts(db, user.id),
+    )
 
 
 def _issue_auth_token(
@@ -250,7 +364,7 @@ def register(
         logger.warning("REGISTER verification email not delivered user=%s", user.id)
 
     logger.info(f"REGISTER user={user.id}")
-    return TokenResponse(access_token=access_token, vault_salt=user.vault_salt)
+    return _build_auth_response(user, access_token)
 
 
 # Login
@@ -314,7 +428,7 @@ def login(
     _set_refresh_cookie(response, refresh_token)
 
     logger.info(f"LOGIN user={user.id}")
-    return TokenResponse(access_token=access_token, vault_salt=user.vault_salt)
+    return _build_auth_response(user, access_token)
 
 
 # Refresh — token rotation with Redis-first validation
@@ -419,7 +533,7 @@ def refresh(
     _set_refresh_cookie(response, new_refresh)
 
     logger.info(f"TOKEN_REFRESH user={user_id}")
-    return TokenResponse(access_token=new_access, vault_salt=user.vault_salt)
+    return _build_auth_response(user, new_access)
 
 
 # Logout
@@ -526,12 +640,12 @@ def resend_verification_email(
 
 
 @router.post(
-    "/verify-master-password",
-    response_model=MessageResponse,
+    "/unlock",
+    response_model=UnlockedVaultResponse,
     responses={401: {"description": "Invalid master password"}},
 )
 @limiter.limit("20/minute")
-def verify_master_password_route(
+def unlock_vault(
     body: VerifyMasterPasswordRequest,
     request: Request,
     db: Annotated[Session, Depends(get_db)],
@@ -540,7 +654,7 @@ def verify_master_password_route(
     if not _verify_master_password(current_user, body.master_password_verifier):
         raise HTTPException(status_code=401, detail="Invalid master password")
 
-    return MessageResponse(message="Master password verified")
+    return _build_unlock_response(db, current_user)
 
 
 @router.post(
@@ -672,7 +786,7 @@ def delete_account(
     return MessageResponse(message="Account deleted")
 
 
-# Me / Vault-salt
+# Me
 
 @router.get(
     "/me",
@@ -685,23 +799,3 @@ def me(
     current_user: Annotated[User, Depends(get_current_user_from_db)],
 ):
     return current_user
-
-
-@router.get("/vault-salt", response_model=dict)
-@limiter.limit("30/minute")
-def get_vault_salt(
-    request: Request,
-    current_user: Annotated[User, Depends(get_current_user_from_db)],
-):
-    """Returns vault salt for client-side key re-derivation on vault unlock."""
-    user_id = str(current_user.id)
-
-    cached_salt = get_cached_vault_salt(user_id)
-    if cached_salt:
-        logger.debug(f"vault_salt cache HIT user={user_id}")
-        return {"vault_salt": cached_salt}
-
-    logger.debug(f"vault_salt cache MISS user={user_id}")
-    salt = current_user.vault_salt
-    set_cached_vault_salt(user_id, salt)
-    return {"vault_salt": salt}
