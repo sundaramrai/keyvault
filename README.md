@@ -17,14 +17,14 @@
 
 Cipheria is a self-hosted, zero-knowledge password manager. All encryption and decryption happens entirely in your browser — the server stores only ciphertext and never sees your master password or vault contents.
 
-**Stack:** Next.js · FastAPI (Vercel Serverless) · Neon PostgreSQL · Browser Extension (MV3)
+**Stack:** Next.js · FastAPI (Vercel Serverless) · Neon PostgreSQL
 
 ---
 
 ## How It Works
 
 ```
-Browser / Extension
+Browser
     │
     ├── Web Crypto API
     │       Master password → PBKDF2-SHA256 (600k iterations) → 256-bit key
@@ -58,7 +58,6 @@ A complete database breach exposes **no plaintext passwords**.
 ## Features
 
 - 🔑 **Zero-knowledge encryption** — server sees only ciphertext
-- 🌐 **Browser extension** — autofill credentials on any site (MV3)
 - 🗂️ **Vault management** — search, categorise, and favourite entries
 - 📤 **JSON export** — full encrypted vault export
 - 🔄 **Auto token refresh** — seamless session management
@@ -92,13 +91,6 @@ cipheria/
 │   │   ├── api.ts              # Axios client + auto-refresh interceptor
 │   │   └── store.ts            # Zustand state management
 │   └── styles/globals.css
-│
-├── extension/                  # Browser extension (Manifest V3)
-│   ├── manifest.json
-│   ├── popup.html
-│   ├── popup.js
-│   ├── background.js           # Service worker (key storage)
-│   └── content.js              # Autofill injection
 │
 ├── alembic/                    # Database migrations
 ├── vercel.json                 # Routes /api/* → FastAPI, rest → Next.js
@@ -173,31 +165,6 @@ vercel env add NEXT_PUBLIC_API_URL   # set to your Vercel deployment URL
 `vercel.json` automatically routes `/api/*` requests to FastAPI and everything else to Next.js.
 
 Interactive API docs are available at: `https://<your-deployment>.vercel.app/api/docs`
-
----
-
-## Browser Extension
-
-### Load in Chrome (Development)
-
-1. Navigate to `chrome://extensions`
-2. Enable **Developer mode** (top-right toggle)
-3. Click **Load unpacked** → select the `extension/` folder
-
-### Configure for Production
-
-Edit line 1 of `extension/popup.js`:
-
-```js
-const API_URL = "https://cipheria.vercel.app";
-```
-
-### Package for Distribution
-
-```bash
-cd extension
-zip -r cipheria-extension.zip . -x "*.DS_Store"
-```
 
 ---
 
