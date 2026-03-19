@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 import logging
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -15,6 +16,10 @@ from slowapi.middleware import SlowAPIMiddleware
 from limiter import limiter
 from routes.auth import router as auth_router
 from routes.vault import router as vault_router
+
+IS_PROD = (
+    os.getenv("ENVIRONMENT") == "production"
+)
 
 
 @asynccontextmanager
@@ -33,9 +38,9 @@ app = FastAPI(
     title="Cipheria API",
     description="Secure serverless password manager backend",
     version="1.0.0",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
+    docs_url=None if IS_PROD else "/api/docs",
+    redoc_url=None if IS_PROD else "/api/redoc",
+    openapi_url=None if IS_PROD else "/api/openapi.json",
     lifespan=lifespan,
 )
 
@@ -49,10 +54,18 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 _allowed_origins = [
     o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 ]
-_allowed_origin_regex = os.getenv(
-    "ALLOWED_ORIGIN_REGEX",
-    r"^https://cipheria\.vercel\.app$|^chrome-extension://.*$|^moz-extension://.*$",
+_allowed_origin_patterns = [
+    os.getenv("ALLOWED_ORIGIN_REGEX", r"^https://cipheria\.vercel\.app$"),
+]
+_allowed_extension_origins = [
+    o.strip()
+    for o in os.getenv("ALLOWED_EXTENSION_ORIGINS", "").split(",")
+    if o.strip()
+]
+_allowed_origin_patterns.extend(
+    f"^{re.escape(origin)}$" for origin in _allowed_extension_origins
 )
+_allowed_origin_regex = "|".join(_allowed_origin_patterns)
 
 app.add_middleware(
     CORSMiddleware,
