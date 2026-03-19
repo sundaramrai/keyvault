@@ -14,7 +14,7 @@
 const PBKDF2_ITERATIONS = 600_000;
 const KEY_LENGTH = 256;
 
-export async function deriveVaultKeyBits(masterPassword: string, saltHex: string): Promise<ArrayBuffer> {
+async function deriveKeyBits(masterPassword: string, saltHex: string): Promise<ArrayBuffer> {
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(masterPassword),
@@ -27,16 +27,6 @@ export async function deriveVaultKeyBits(masterPassword: string, saltHex: string
     { name: 'PBKDF2', salt: hexToBytes(saltHex), iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     keyMaterial,
     KEY_LENGTH,
-  );
-}
-
-async function importVaultKey(bits: ArrayBuffer): Promise<CryptoKey> {
-  return crypto.subtle.importKey(
-    'raw',
-    bits,
-    { name: 'AES-GCM', length: KEY_LENGTH },
-    false,
-    ['encrypt', 'decrypt'],
   );
 }
 
@@ -55,35 +45,20 @@ export async function deriveMasterPasswordVerifier(
   masterPassword: string,
   saltHex: string,
 ): Promise<string> {
-  const keyBits = await deriveVaultKeyBits(masterPassword, saltHex);
+  const keyBits = await deriveKeyBits(masterPassword, saltHex);
   return hashBytesHex(keyBits);
 }
 
 // Key Derivation
 export async function deriveKey(masterPassword: string, saltHex: string): Promise<CryptoKey> {
-  const keyBits = await deriveVaultKeyBits(masterPassword, saltHex);
-  return importVaultKey(keyBits);
-}
-
-export async function importVaultKeyMaterial(keyMaterialB64: string): Promise<CryptoKey> {
-  return importVaultKey(base64ToBytes(keyMaterialB64).buffer);
-}
-
-export async function deriveVaultCredentials(
-  masterPassword: string,
-  saltHex: string,
-): Promise<{ key: CryptoKey; keyMaterial: string; masterPasswordVerifier: string }> {
-  const keyBits = await deriveVaultKeyBits(masterPassword, saltHex);
-  const [key, masterPasswordVerifier] = await Promise.all([
-    importVaultKey(keyBits),
-    hashBytesHex(keyBits),
-  ]);
-
-  return {
-    key,
-    keyMaterial: bytesToBase64(new Uint8Array(keyBits)),
-    masterPasswordVerifier,
-  };
+  const keyBits = await deriveKeyBits(masterPassword, saltHex);
+  return crypto.subtle.importKey(
+    'raw',
+    keyBits,
+    { name: 'AES-GCM', length: KEY_LENGTH },
+    false,
+    ['encrypt', 'decrypt'],
+  );
 }
 
 // Encrypt
