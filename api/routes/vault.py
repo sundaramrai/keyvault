@@ -16,9 +16,7 @@ from schemas import (
     VaultItemCreate,
     VaultItemUpdate,
     VaultItemResponse,
-    VaultItemSummary,
     PaginatedVaultResponse,
-    VaultSidebarCountsResponse,
 )
 from deps import CurrentUser, DBUser
 from cache import (
@@ -284,14 +282,6 @@ def list_items(
         response.headers["ETag"] = etag
 
     return result
-
-
-@router.get("/stats", response_model=VaultSidebarCountsResponse)
-def get_sidebar_counts(
-    db: Annotated[Session, Depends(get_db)],
-    current_user: CurrentUser,
-):
-    return _sidebar_counts(db, current_user.id)
 
 
 # Get single item — cached, includes encrypted_data
