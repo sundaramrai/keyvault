@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Cormorant_Garamond, DM_Mono, Outfit } from 'next/font/google';
 import '../styles/globals.css';
 import { Toaster } from 'react-hot-toast';
+import { ThemeSync } from '@/components/ThemeSync';
 import { THEME_STORAGE_KEY } from '@/lib/theme';
 
 const cormorant = Cormorant_Garamond({
@@ -64,6 +65,7 @@ export default function RootLayout({ children }: { readonly children: React.Reac
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body suppressHydrationWarning>
+        <ThemeSync />
         <div style={{ position: 'relative', zIndex: 1 }}>
           {children}
         </div>
