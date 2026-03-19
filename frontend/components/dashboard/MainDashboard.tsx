@@ -1,5 +1,6 @@
 'use client';
 import { useState, useCallback, useMemo } from 'react';
+import Image from 'next/image';
 import { RotateCcw, Search, Plus, Shield, Globe, CreditCard, StickyNote, User, Trash2, Download, Star, Edit2, ChevronRight } from 'lucide-react';
 import { checkHIBP } from '@/lib/crypto';
 import { CATEGORY_ICONS } from './types';
@@ -17,6 +18,7 @@ const CATEGORIES = [
 ] as const;
 
 const ELLIPSIS_STYLE = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const;
+const passthroughImageLoader = ({ src }: { src: string }) => src;
 
 function SearchSkeleton({ iconSize = 36 }: Readonly<{ iconSize?: number }>) {
     return (
@@ -38,6 +40,25 @@ function SearchSkeleton({ iconSize = 36 }: Readonly<{ iconSize?: number }>) {
     );
 }
 
+function FaviconImage({ src, size }: Readonly<{ src: string; size: number }>) {
+    const [failed, setFailed] = useState(false);
+    const handleError = useCallback(() => setFailed(true), []);
+
+    if (failed) return null;
+
+    return (
+        <Image
+            src={src}
+            alt=""
+            width={size}
+            height={size}
+            unoptimized
+            loader={passthroughImageLoader}
+            onError={handleError}
+        />
+    );
+}
+
 function ItemIcon({ item, size }: Readonly<{ item: any; size: number }>) {
     const Icon = CATEGORY_ICONS[item.category] || Globe;
     const px = Math.round(size * 0.55);
@@ -47,7 +68,7 @@ function ItemIcon({ item, size }: Readonly<{ item: any; size: number }>) {
             background: 'var(--skeleton-1)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
         }}>
             {item.favicon_url
-                ? <img src={item.favicon_url} alt="" width={px} height={px} onError={(e: any) => { e.target.style.display = 'none'; }} />
+                ? <FaviconImage src={item.favicon_url} size={px} />
                 : <Icon size={px} color="var(--text-secondary)" />}
         </div>
     );
@@ -244,7 +265,7 @@ function ItemDetailHeader({ item, isMobile, handleToggleFav, handleOpenEdit, han
                     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}>
                     {item.favicon_url
-                        ? <img src={item.favicon_url} alt="" width={iconSize - 22} height={iconSize - 22} />
+                        ? <FaviconImage src={item.favicon_url} size={iconSize - 22} />
                         : <Icon size={iconSize - 26} color="var(--accent)" />}
                 </div>
                 <div>
@@ -340,7 +361,7 @@ export function MainDashboard(props: Readonly<any>) {
     const {
         user, category, searchValue, onSearchChange, handleExport, lockVault, handleLogout,
         onOpenSettings, onToggleFavourites, onToggleTrash, isFavouritesView, isTrashView,
-        vaultItems, sidebarCounts, setShowAddModal, setCategory, selectedItem, handleSelectItem, selectedItemLoading,
+        sidebarCounts, setShowAddModal, setCategory, selectedItem, handleSelectItem, selectedItemLoading,
         handleToggleFav, handleOpenEdit, handleDelete, handleRestoreItem, handleDeletePermanent, deletingId, copyToClipboard,
         hibp, setHibp, showAddModal, newItem, setNewItem, savingItem, genOptions, handleAddItem,
         showEditModal, setShowEditModal, editForm, setEditForm, updatingItem, handleEditItem,
@@ -451,7 +472,7 @@ export function MainDashboard(props: Readonly<any>) {
 
             {/* Desktop layout */}
             <DesktopSidebar
-                user={user} category={category} vaultItems={vaultItems} sidebarCounts={sidebarCounts}
+                user={user} category={category} sidebarCounts={sidebarCounts}
                 setCategory={setCategory} handleExport={handleExport}
                 lockVault={lockVault} handleLogout={handleLogout}
                 onOpenSettings={onOpenSettings} onToggleFavourites={onToggleFavourites}
