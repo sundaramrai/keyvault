@@ -5,6 +5,7 @@ import { Toaster } from 'react-hot-toast';
 import { ThemeSync } from '@/components/ThemeSync';
 import { THEME_STORAGE_KEY } from '@/lib/theme';
 import { Analytics } from '@vercel/analytics/next';
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const cormorant = Cormorant_Garamond({
   subsets: ['latin'],
@@ -86,6 +87,7 @@ export default function RootLayout({ children }: { readonly children: React.Reac
           }}
         />
         <Analytics />
+        <SpeedInsights/>
       </body>
     </html>
   );
