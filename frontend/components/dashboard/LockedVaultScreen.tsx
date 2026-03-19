@@ -25,7 +25,7 @@ export function LockedVaultScreen({
             <div aria-hidden style={{
                 position: 'fixed', top: '25%', left: '50%', transform: 'translateX(-50%)',
                 width: 'min(560px, 120vw)', height: 'min(560px, 120vw)', borderRadius: '50%',
-                background: 'radial-gradient(ellipse, rgba(245,158,11,0.07) 0%, transparent 68%)',
+                background: 'radial-gradient(ellipse, color-mix(in srgb, var(--accent) 7%, transparent) 0%, transparent 68%)',
                 pointerEvents: 'none',
             }} />
 
@@ -34,9 +34,9 @@ export function LockedVaultScreen({
                 <div className="animate-fade-up" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 28 }}>
                     <div style={{
                         width: 64, height: 64, borderRadius: 18,
-                        background: 'var(--accent-dim)', border: '1px solid rgba(245,158,11,0.25)',
+                        background: 'var(--accent-dim)', border: '1px solid var(--accent-border-strong)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        boxShadow: '0 0 30px rgba(245,158,11,0.1)', marginBottom: 18,
+                        boxShadow: '0 0 30px var(--accent-shadow-soft)', marginBottom: 18,
                     }}>
                         <Lock size={28} color="var(--accent)" />
                     </div>
@@ -47,7 +47,7 @@ export function LockedVaultScreen({
                         Enter your master password to continue
                     </p>
                     {user?.master_hint && (
-                        <p style={{ marginTop: 10, fontSize: '0.78rem', color: 'rgba(245,158,11,0.65)', fontStyle: 'italic', textAlign: 'center' }}>
+                        <p style={{ marginTop: 10, fontSize: '0.78rem', color: 'var(--warning-text)', fontStyle: 'italic', textAlign: 'center' }}>
                             Hint: {user.master_hint}
                         </p>
                     )}
