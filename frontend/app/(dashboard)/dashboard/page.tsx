@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { toastService } from '@/lib/toast';
-import { getItemLoadError } from '@/lib/errors';
+import { getItemLoadError, parseApiError } from '@/lib/errors';
 import { useAuthStore } from '@/lib/store';
 import type { VaultItem } from '@/lib/types';
 import { vaultApi, authApi } from '@/lib/api';
@@ -100,7 +100,7 @@ function sidebarCountDelta(item: Pick<VaultItem, 'category' | 'is_favourite' | '
 
 // Vault unlock sub-hook
 function useVaultUnlock(
-  user: { vault_salt?: string; master_password_verifier?: string | null } | null,
+  user: { vault_salt?: string } | null,
   setVaultKey: (k: CryptoKey) => void,
   setVaultItems: (items: VaultItem[]) => void,
   setTotalPages: (n: number) => void,
@@ -120,29 +120,11 @@ function useVaultUnlock(
           const salt = user?.vault_salt;
           if (!salt) throw new Error('NO_SALT');
           const key = await deriveKey(masterPassword, salt);
-          const verifier = user?.master_password_verifier;
+          const verifier = await deriveMasterPasswordVerifier(masterPassword, salt);
           update('Verifying master password...');
-          if (verifier) {
-            const derivedVerifier = await deriveMasterPasswordVerifier(masterPassword, salt);
-            if (derivedVerifier !== verifier) {
-              throw new Error('WRONG_PASSWORD');
-            }
-          }
+          await authApi.verifyMasterPassword(verifier);
           const { data: listResult } = await vaultApi.list({ page_size: 50 });
           const items: VaultItem[] = listResult.items;
-          // Legacy accounts may not have a verifier yet. Fall back to ciphertext
-          // validation so those users are not locked out after the migration.
-          if (!verifier && items.length === 0) {
-            throw new Error('MASTER_PASSWORD_SETUP_REQUIRED');
-          }
-          if (!verifier && items.length > 0 && items[0].encrypted_data) {
-            try {
-              await decryptData(items[0].encrypted_data, key);
-            } catch (verifyErr) {
-              console.error('[unlock] Key verification failed:', verifyErr);
-              throw new Error('WRONG_PASSWORD');
-            }
-          }
           setVaultKey(key);
           update('Decrypting items...');
           const decryptedItems = await Promise.all(
@@ -174,9 +156,11 @@ function useVaultUnlock(
             const e = err as Error;
             if (e?.message === 'WRONG_PASSWORD') return 'Wrong master password';
             if (e?.message === 'NO_SALT') return 'Session error — please sign out and sign in again';
-            if (e?.message === 'MASTER_PASSWORD_SETUP_REQUIRED') return 'Please sign in again once to finish securing your vault';
+            if ((err as { response?: { status?: number } })?.response?.status === 401) {
+              return 'Wrong master password';
+            }
             console.error('[unlock] Error:', err);
-            return 'Failed to unlock vault';
+            return parseApiError(err, 'Failed to unlock vault');
           },
         },
       );
