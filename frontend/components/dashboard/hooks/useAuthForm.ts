@@ -75,8 +75,7 @@ export function useAuthForm(initialTab: Tab = 'login') {
                     form.fullName,
                     form.masterHint,
                 );
-                const { data: user } = await authApi.me();
-                completeAuth(user, data.access_token, key);
+                completeAuth(data.user, data.access_token, key);
                 toastService.success('Account created. Check your email to verify the account.');
             } else {
                 if (!form.masterPassword) {
@@ -87,8 +86,7 @@ export function useAuthForm(initialTab: Tab = 'login') {
                 const key = await deriveKey(form.masterPassword, challenge.vault_salt);
                 const masterPasswordVerifier = await deriveMasterPasswordVerifier(form.masterPassword, challenge.vault_salt);
                 const { data } = await authApi.login(form.email, masterPasswordVerifier);
-                const { data: user } = await authApi.me();
-                completeAuth(user, data.access_token, key);
+                completeAuth(data.user, data.access_token, key);
                 toastService.success('Welcome back!');
             }
             router.replace('/dashboard');
