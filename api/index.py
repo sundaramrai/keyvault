@@ -51,14 +51,13 @@ app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 _allowed_origins = [
-    o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+    o.strip() for o in os.getenv("ALLOWED_ORIGINS").split(",")
+    if o.strip()
 ]
-_allowed_origin_regex = os.getenv("ALLOWED_ORIGIN_REGEX", r"^https://cipheria\.vercel\.app$")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
-    allow_origin_regex=_allowed_origin_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
