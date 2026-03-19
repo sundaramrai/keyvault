@@ -46,7 +46,6 @@ export interface UserProfile {
     email: string;
     full_name?: string;
     vault_salt: string;
-    master_password_verifier?: string | null;
     master_hint?: string;
     email_verified: boolean;
     created_at?: string;
