@@ -1,10 +1,6 @@
 import axios from 'axios';
 import type { AuthSession, PaginatedVaultItems, UserProfile, VaultItem } from '@/lib/types';
 
-// In dev: empty string → Next.js proxy forwards /api/* to the backend (keeps cookies same-origin).
-// In prod: set NEXT_PUBLIC_API_URL to your API origin (e.g. https://api.example.com).
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
-
 // In-memory access token — never touches Web Storage, invisible to XSS
 let _accessToken: string | null = null;
 export const setAccessToken = (token: string | null) => { _accessToken = token; };
@@ -28,7 +24,6 @@ const AUTO_REFRESH_EXCLUDED_PATHS = [
 let _refreshPromise: Promise<string> | null = null;
 
 export const api = axios.create({
-  baseURL: API_URL,
   timeout: 15_000,
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true, // send HttpOnly refresh-token cookie automatically
@@ -59,7 +54,7 @@ api.interceptors.response.use(
           // Start a new refresh and clear the mutex only after all awaiting
           // callers have received the token (i.e. after the microtask queue drains).
           const promise = axios
-            .post(`${API_URL}/api/auth/refresh`, {}, { withCredentials: true })
+            .post('/api/auth/refresh', {}, { withCredentials: true })
             .then(({ data }) => {
               setAccessToken(data.access_token);
               return data.access_token as string;
