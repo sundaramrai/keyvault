@@ -4,6 +4,7 @@ import '../styles/globals.css';
 import { Toaster } from 'react-hot-toast';
 import { ThemeSync } from '@/components/ThemeSync';
 import { THEME_STORAGE_KEY } from '@/lib/theme';
+import { Analytics } from '@vercel/analytics/next';
 
 const cormorant = Cormorant_Garamond({
   subsets: ['latin'],
@@ -84,6 +85,7 @@ export default function RootLayout({ children }: { readonly children: React.Reac
             error: { iconTheme: { primary: 'var(--danger)', secondary: 'var(--status-ink)' } },
           }}
         />
+        <Analytics />
       </body>
     </html>
   );
