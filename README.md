@@ -1,8 +1,9 @@
+<!-- markdownlint-disable MD033 MD041 -->
 <div align="center">
 
 # Cipheria
 
-### Zero-Knowledge Password Manager
+## Zero-Knowledge Password Manager
 
 *Your master password never leaves your device.*
 
@@ -10,6 +11,7 @@
 [![Live Demo](https://img.shields.io/badge/Live-cipheria.vercel.app-brightgreen)](https://cipheria.vercel.app)
 
 </div>
+<!-- markdownlint-enable MD033 MD041 -->
 
 Cipheria is a zero-knowledge password manager built with Next.js and FastAPI. Encryption and decryption happen in the browser, and the server stores only ciphertext plus metadata.
 
