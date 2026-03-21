@@ -1,28 +1,59 @@
 /**
- * errors.ts — Centralised error-message helpers.
+ * errors.ts - Centralised error-message helpers.
  *
  * Import these wherever you need to turn an API / crypto error into a
- * human-readable string.  Keeping them here means the messages stay
+ * human-readable string. Keeping them here means the messages stay
  * consistent across pages and hooks without being copy-pasted.
  */
+
+type ApiErrorLike = {
+    message?: string;
+    response?: {
+        status?: number;
+        data?: {
+            detail?: unknown;
+        };
+    };
+};
+
+type ValidationErrorLike = {
+    msg?: unknown;
+};
+
+function getApiErrorDetail(err: unknown): unknown {
+    return (err as ApiErrorLike)?.response?.data?.detail;
+}
 
 /**
  * Extract the best error message from a FastAPI / axios error.
  *
  * FastAPI can return:
- *   - `{ detail: "string" }`          – plain 4xx/5xx
- *   - `{ detail: [{msg, loc, …}] }`   – pydantic validation errors
+ *   - `{ detail: "string" }` plain 4xx/5xx
+ *   - `{ detail: [{msg, loc, ...}] }` pydantic validation errors
  *
  * Falls back to `fallback` when no detail is present.
  */
 export const parseApiError = (err: unknown, fallback: string): string => {
-    const detail = (err as any)?.response?.data?.detail;
+    const detail = getApiErrorDetail(err);
     if (typeof detail === 'string') return detail;
-    if (Array.isArray(detail) && detail.length > 0)
+    if (Array.isArray(detail) && detail.length > 0) {
         return detail
-            .map((d: any) => String(d.msg ?? d).replace(/^Value error,\s*/i, ''))
+            .map((entry) => {
+                const validationEntry = entry as ValidationErrorLike;
+                return String(validationEntry.msg ?? entry).replace(/^Value error,\s*/i, '');
+            })
             .join('; ');
+    }
     return fallback;
+};
+
+export const getSessionAwareError = (err: unknown, fallback: string): string => {
+    const status = (err as ApiErrorLike)?.response?.status;
+    const detail = parseApiError(err, fallback);
+    if (status === 401 && detail === 'Could not validate credentials') {
+        return 'Session expired - please sign in again';
+    }
+    return detail;
 };
 
 /**
@@ -30,11 +61,13 @@ export const parseApiError = (err: unknown, fallback: string): string => {
  * Used by `handleSelectItem` and similar item-fetch flows.
  */
 export const getItemLoadError = (err: unknown): string => {
-    const e = err as any;
-    if (e?.message === 'CRYPTO_FAIL') return 'Decrypt failed — wrong master password?';
+    const e = err as ApiErrorLike;
+    if (e?.message === 'CRYPTO_FAIL') return 'Decrypt failed - wrong master password?';
     if (e?.message === 'BAD_FORMAT') return 'Item data is corrupted';
-    if (e?.message === 'NO_KEY') return 'Vault is locked — please re-enter master password';
+    if (e?.message === 'NO_KEY') return 'Vault is locked - please re-enter master password';
     if (e?.response?.status === 404) return 'Item not found';
-    if (e?.response?.status === 401) return 'Session expired — please sign in again';
+    if (e?.response?.status === 401) {
+        return getSessionAwareError(err, 'Session expired - please sign in again');
+    }
     return 'Failed to load item';
 };
