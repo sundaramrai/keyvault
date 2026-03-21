@@ -36,6 +36,13 @@ export const toastService = {
     success: (msg: string, toastId?: string) =>
         toast.success(msg, toastId ? { id: toastId } : undefined),
 
+    /** Persistent informational toast. */
+    info: (msg: string, toastId?: string) =>
+        toast(msg, {
+            ...(toastId ? { id: toastId } : {}),
+            icon: 'i',
+        }),
+
     /** Persistent error toast. */
     error: (msg: string, toastId?: string) =>
         toast.error(msg, toastId ? { id: toastId } : undefined),
