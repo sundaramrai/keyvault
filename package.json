@@ -2,6 +2,7 @@
   "name": "cipheria-frontend",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.32.1",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "dev": "next dev --turbo",
