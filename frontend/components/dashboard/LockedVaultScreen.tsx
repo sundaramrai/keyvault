@@ -1,8 +1,10 @@
 'use client';
 import { Lock } from 'lucide-react';
 import { useSignOut } from './hooks/useSignOut';
+import type { UserProfile } from '@/lib/types';
+
 interface Props {
-    user: any;
+    user: Pick<UserProfile, 'master_hint'> | null;
     masterPassword: string;
     onMasterPasswordChange: React.ChangeEventHandler<HTMLInputElement>;
     unlocking: boolean;
