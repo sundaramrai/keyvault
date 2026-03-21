@@ -7,7 +7,8 @@ logger = logging.getLogger(__name__)
 
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:3000").rstrip("/")
 SMTP_HOST = os.getenv("SMTP_HOST")
-SMTP_PORT = int(os.getenv("SMTP_PORT"))
+_smtp_port = os.getenv("SMTP_PORT")
+SMTP_PORT = int(_smtp_port) if _smtp_port else 587
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 SMTP_FROM = os.getenv("SMTP_FROM") or SMTP_USERNAME
