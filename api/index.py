@@ -1,5 +1,8 @@
+import sys 
 import os
 import logging
+
+sys.path.insert(0, os.path.dirname(__file__))
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
