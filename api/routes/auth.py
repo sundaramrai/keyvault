@@ -33,6 +33,7 @@ from schemas import (
     TokenResponse,
     UserResponse,
     VerifyEmailRequest,
+    VerifyEmailResponse,
     UpdateProfileRequest,
     ChangeMasterPasswordRequest,
     DeleteAccountRequest,
@@ -42,7 +43,10 @@ from schemas import (
 )
 from deps import get_current_user_from_db, DBUser
 from cache import (
+    get_cached_sidebar_counts,
+    set_cached_sidebar_counts,
     get_cached_refresh_token,
+    get_cached_user,
     cache_refresh_token_valid,
     revoke_refresh_token_cache,
     is_token_blacklisted,
@@ -204,6 +208,17 @@ def _sidebar_counts(db: Session, user_id) -> dict:
     }
 
 
+def _get_sidebar_counts_cached(db: Session, user_id) -> dict:
+    cache_key = str(user_id)
+    cached = get_cached_sidebar_counts(cache_key)
+    if cached is not None:
+        return cached
+
+    counts = _sidebar_counts(db, user_id)
+    set_cached_sidebar_counts(cache_key, counts)
+    return counts
+
+
 def _serialize_unlock_item(item: VaultItem) -> dict:
     return {
         "id": str(item.id),
@@ -227,17 +242,30 @@ def _build_auth_response(user: User, access_token: str) -> TokenResponse:
     )
 
 
+def _build_auth_response_from_cached(user_dict: dict, access_token: str) -> TokenResponse:
+    user = UserResponse.model_validate(user_dict)
+    return TokenResponse(
+        access_token=access_token,
+        vault_salt=user.vault_salt,
+        user=user,
+    )
+
+
 def _build_unlock_response(db: Session, user: User) -> UnlockedVaultResponse:
-    total = (
-        db.query(func.count(VaultItem.id))
-        .filter(
-            VaultItem.user_id == user.id,
-            VaultItem.is_deleted.is_(False),
-        )
-        .scalar()
-    ) or 0
     rows = (
-        db.query(VaultItem)
+        db.query(
+            VaultItem.id,
+            VaultItem.name,
+            VaultItem.category,
+            VaultItem.encrypted_data,
+            VaultItem.favicon_url,
+            VaultItem.is_favourite,
+            VaultItem.is_deleted,
+            VaultItem.deleted_at,
+            VaultItem.created_at,
+            VaultItem.updated_at,
+            func.count(VaultItem.id).over().label("total_count"),
+        )
         .filter(
             VaultItem.user_id == user.id,
             VaultItem.is_deleted.is_(False),
@@ -246,6 +274,7 @@ def _build_unlock_response(db: Session, user: User) -> UnlockedVaultResponse:
         .limit(UNLOCK_PAGE_SIZE)
         .all()
     )
+    total = int(rows[0].total_count) if rows else 0
 
     return UnlockedVaultResponse(
         items=[_serialize_unlock_item(item) for item in rows],
@@ -253,7 +282,7 @@ def _build_unlock_response(db: Session, user: User) -> UnlockedVaultResponse:
         page=1,
         page_size=UNLOCK_PAGE_SIZE,
         total_pages=-(-total // UNLOCK_PAGE_SIZE) if total else 0,
-        sidebar_counts=_sidebar_counts(db, user.id),
+        sidebar_counts=_get_sidebar_counts_cached(db, user.id),
     )
 
 
@@ -439,7 +468,7 @@ def login(
     responses={401: {"description": "Invalid or expired refresh token"}},
 )
 @limiter.limit("20/minute")
-def refresh(
+def refresh(  # NOSONAR - token rotation flow is intentionally explicit on this security-sensitive path
     request: Request,
     response: Response,
     db: Annotated[Session, Depends(get_db)],
@@ -508,9 +537,15 @@ def refresh(
     if stored:
         stored.revoked = True
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user or not user.is_active:
-        db.commit()  # persist DB revocation even if account is gone/disabled
+    cached_user = get_cached_user(user_id)
+    user = None
+    if cached_user is None:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user or not user.is_active:
+            db.commit()  # persist DB revocation even if account is gone/disabled
+            _reject_refresh("Account not found or disabled")
+    elif not cached_user.get("is_active", True):
+        db.commit()
         _reject_refresh("Account not found or disabled")
 
     new_access = create_access_token({"sub": user_id})
@@ -529,11 +564,16 @@ def refresh(
     # Clear old token from cache only after DB commit succeeds
     revoke_refresh_token_cache(token_hash, jti, _RT_TTL_SECONDS)
 
-    _warm_caches(user, new_hash)
+    if user is not None:
+        _warm_caches(user, new_hash)
+        response_model = _build_auth_response(user, new_access)
+    else:
+        cache_refresh_token_valid(new_hash, user_id, _RT_TTL_SECONDS)
+        response_model = _build_auth_response_from_cached(cached_user, new_access)
     _set_refresh_cookie(response, new_refresh)
 
     logger.info(f"TOKEN_REFRESH user={user_id}")
-    return _build_auth_response(user, new_access)
+    return response_model
 
 
 # Logout
@@ -581,7 +621,7 @@ def logout(
 
 @router.post(
     "/verify-email",
-    response_model=MessageResponse,
+    response_model=VerifyEmailResponse,
     responses={400: {"description": "Invalid or expired token or account not found"}},
 )
 @limiter.limit("20/minute")
@@ -603,7 +643,10 @@ def verify_email(
         str(user.id),
         _user_cache_dict(user),
     )
-    return MessageResponse(message="Email verified")
+    return VerifyEmailResponse(
+        message="Email verified",
+        user=UserResponse.model_validate(user),
+    )
 
 
 @router.post(
