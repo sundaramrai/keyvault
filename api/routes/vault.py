@@ -1,13 +1,12 @@
 """
-routes/vault.py — Vault CRUD with Redis caching and ETag support.
+Vault CRUD with Redis caching.
 """
 
-import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Annotated, Literal, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -20,12 +19,14 @@ from schemas import (
 )
 from deps import CurrentUser, DBUser
 from cache import (
-    get_cached_vault_list,
-    set_cached_vault_list,
-    invalidate_vault_list,
+    get_cached_sidebar_counts,
     get_cached_vault_item,
-    set_cached_vault_item,
+    get_cached_vault_list,
     invalidate_vault_item,
+    invalidate_vault_list,
+    set_cached_sidebar_counts,
+    set_cached_vault_item,
+    set_cached_vault_list,
 )
 from limiter import limiter, get_client_ip
 
@@ -100,8 +101,18 @@ def _sidebar_counts(db: Session, user_id) -> dict:
     }
 
 
+def _get_sidebar_counts_cached(db: Session, user_id) -> dict:
+    cache_key = str(user_id)
+    cached = get_cached_sidebar_counts(cache_key)
+    if cached is not None:
+        return cached
+
+    counts = _sidebar_counts(db, user_id)
+    set_cached_sidebar_counts(cache_key, counts)
+    return counts
+
+
 def _item_to_dict(item) -> dict:
-    """Full serialisation including encrypted_data — used for single-item responses."""
     return {
         "id": str(item.id),
         "name": item.name,
@@ -117,7 +128,6 @@ def _item_to_dict(item) -> dict:
 
 
 def _item_to_summary_dict(item) -> dict:
-    """Excludes encrypted_data — used for list responses to minimise payload."""
     return {
         "id": str(item.id),
         "name": item.name,
@@ -129,14 +139,6 @@ def _item_to_summary_dict(item) -> dict:
         "created_at": item.created_at.isoformat() if item.created_at else None,
         "updated_at": item.updated_at.isoformat() if item.updated_at else None,
     }
-
-
-def _make_etag(data: dict) -> str:
-    # Stable ETag from total count + page params + most recent updated_at
-    raw = f"{data['total']}:{data['page']}:{data['page_size']}"
-    if data["items"]:
-        raw += f":{data['items'][0].get('updated_at', '')}"
-    return f'"{hashlib.md5(raw.encode()).hexdigest()}"'
 
 
 def _log_action(db: Session, user_id, action: str, request: Request) -> None:
@@ -151,16 +153,8 @@ def _log_action(db: Session, user_id, action: str, request: Request) -> None:
 
 
 def _sanitise_search(search: str) -> str:
-    """Strip LIKE metacharacters to prevent pattern-based ReDoS via ILIKE.
-
-    PostgreSQL's ILIKE treats % (any sequence), _ (any single char), and \
-    (escape) as special. Removing them is safe — users searching for a name
-    don't need regex-style wildcards.
-    """
     return search.replace("\\", "").replace("%", "").replace("_", "")
 
-
-# Export — always hits DB, no cache, strictly rate-limited, audited
 
 @router.get("/export/json")
 @limiter.limit("3/minute")
@@ -178,7 +172,7 @@ def export_vault(
     _log_action(db, current_user.id, "VAULT_EXPORT", request)
     db.commit()
 
-    logger.info(f"VAULT_EXPORT user={current_user.id} items={len(items)}")
+    logger.info("VAULT_EXPORT user=%s items=%s", current_user.id, len(items))
     return {
         "export_version": "1.0",
         "user_email": current_user.email,
@@ -198,15 +192,10 @@ def export_vault(
     }
 
 
-# List — cached, paginated, ETag support, encrypted_data excluded
-
 @router.get("", response_model=PaginatedVaultResponse)
 def list_items(
-    request: Request,
-    response: Response,
     db: Annotated[Session, Depends(get_db)],
     current_user: CurrentUser,
-    # Literal enum — rejects any value not in the allowed set at the query-param level
     category: Annotated[Optional[Literal["login", "card", "note", "identity"]], Query()] = None,
     search: Annotated[Optional[str], Query(max_length=128)] = None,
     favourites_only: Annotated[bool, Query()] = False,
@@ -215,76 +204,76 @@ def list_items(
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = 50,
 ):
     user_id = str(current_user.id)
-
-    # Sanitise search before use — strips LIKE metacharacters (%, _, \)
-    # to prevent ReDoS via pathological ILIKE patterns
     clean_search = _sanitise_search(search) if search else None
 
-    # Skip caching for search queries (low repetition, unpredictable key space)
     if not clean_search:
         cached = get_cached_vault_list(
             user_id, category, clean_search, favourites_only, deleted_only, page, page_size
         )
         if cached is not None:
-            logger.debug(f"vault:list cache HIT user={user_id}")
-            etag = _make_etag(cached)
-            if request.headers.get("if-none-match") == etag:
-                return Response(status_code=304)
-            response.headers["ETag"] = etag
+            logger.debug("vault:list cache HIT user=%s", user_id)
             return cached
 
-    logger.debug(f"vault:list cache MISS user={user_id}")
+    logger.debug("vault:list cache MISS user=%s", user_id)
 
-    q = db.query(
-        VaultItem.id,
-        VaultItem.name,
-        VaultItem.category,
-        # encrypted_data intentionally excluded from list — callers fetch
-        # individual items via GET /vault/{id} when ciphertext is needed.
-        VaultItem.favicon_url,
-        VaultItem.is_favourite,
-        VaultItem.is_deleted,
-        VaultItem.deleted_at,
-        VaultItem.created_at,
-        VaultItem.updated_at,
-    ).filter(VaultItem.user_id == current_user.id, VaultItem.is_deleted.is_(deleted_only))
-
+    filters = [
+        VaultItem.user_id == current_user.id,
+        VaultItem.is_deleted.is_(deleted_only),
+    ]
     if category:
-        q = q.filter(VaultItem.category == category)
+        filters.append(VaultItem.category == category)
     if clean_search:
-        q = q.filter(VaultItem.name.ilike(f"%{clean_search}%"))
+        filters.append(VaultItem.name.ilike(f"%{clean_search}%"))
     if favourites_only:
-        q = q.filter(VaultItem.is_favourite.is_(True))
+        filters.append(VaultItem.is_favourite.is_(True))
 
-    total = q.count()
     rows = (
-        q.order_by(VaultItem.updated_at.desc())
+        db.query(
+            VaultItem.id,
+            VaultItem.name,
+            VaultItem.category,
+            VaultItem.favicon_url,
+            VaultItem.is_favourite,
+            VaultItem.is_deleted,
+            VaultItem.deleted_at,
+            VaultItem.created_at,
+            VaultItem.updated_at,
+            func.count(VaultItem.id).over().label("total_count"),
+        )
+        .filter(*filters)
+        .order_by(VaultItem.updated_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
     )
-    items_data = [_item_to_summary_dict(r) for r in rows]
+
+    if rows:
+        total = int(rows[0].total_count)
+    elif page == 1:
+        total = 0
+    else:
+        total = (
+            db.query(func.count(VaultItem.id))
+            .filter(*filters)
+            .scalar()
+        ) or 0
 
     result = {
-        "items": items_data,
+        "items": [_item_to_summary_dict(row) for row in rows],
         "total": total,
         "page": page,
         "page_size": page_size,
-        "total_pages": -(-total // page_size),
-        "sidebar_counts": None if clean_search else _sidebar_counts(db, current_user.id),
+        "total_pages": -(-total // page_size) if total else 0,
+        "sidebar_counts": None if clean_search else _get_sidebar_counts_cached(db, current_user.id),
     }
 
     if not clean_search:
         set_cached_vault_list(
             user_id, category, clean_search, favourites_only, deleted_only, page, page_size, result
         )
-        etag = _make_etag(result)
-        response.headers["ETag"] = etag
 
     return result
 
-
-# Get single item — cached, includes encrypted_data
 
 @router.get(
     "/{item_id}",
@@ -301,10 +290,10 @@ def get_item(
 
     cached = get_cached_vault_item(user_id, item_key)
     if cached is not None:
-        logger.debug(f"vault:item cache HIT user={user_id} item={item_key}")
+        logger.debug("vault:item cache HIT user=%s item=%s", user_id, item_key)
         return cached
 
-    logger.debug(f"vault:item cache MISS user={user_id} item={item_key}")
+    logger.debug("vault:item cache MISS user=%s item=%s", user_id, item_key)
     item = (
         db.query(VaultItem)
         .filter(VaultItem.id == item_id, VaultItem.user_id == current_user.id)
@@ -318,12 +307,11 @@ def get_item(
     return data
 
 
-# Create — enforces per-user cap, invalidates list cache, primes item cache
-
-@router.post("", response_model=VaultItemResponse, status_code=201,
-    responses={
-        400: {"description": f"Vault item limit of {VAULT_ITEM_LIMIT} reached"},
-    },
+@router.post(
+    "",
+    response_model=VaultItemResponse,
+    status_code=201,
+    responses={400: {"description": f"Vault item limit of {VAULT_ITEM_LIMIT} reached"}},
 )
 def create_item(
     body: VaultItemCreate,
@@ -331,8 +319,6 @@ def create_item(
     current_user: DBUser,
 ):
     user_id = str(current_user.id)
-
-    # Enforce per-user vault item limit to prevent DB storage abuse
     count = (
         db.query(func.count(VaultItem.id))
         .filter(VaultItem.user_id == current_user.id, VaultItem.is_deleted.is_(False))
@@ -354,17 +340,15 @@ def create_item(
     )
     db.add(item)
     db.commit()
-    db.refresh(item)  # ensures created_at / updated_at reflect DB-generated values
+    db.refresh(item)
 
     invalidate_vault_list(user_id)
-    logger.debug(f"vault:list cache busted (create) user={user_id}")
+    logger.debug("vault:list cache busted (create) user=%s", user_id)
 
     data = _item_to_dict(item)
     set_cached_vault_item(user_id, str(item.id), data)
     return data
 
-
-# Update — invalidates item + list cache, re-primes item cache
 
 @router.patch(
     "/{item_id}",
@@ -391,18 +375,16 @@ def update_item(
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(item, field, value)
     db.commit()
-    db.refresh(item)  # ensures updated_at reflects the DB-generated timestamp
+    db.refresh(item)
 
     invalidate_vault_item(user_id, item_key)
     invalidate_vault_list(user_id)
-    logger.debug(f"vault cache busted (update) user={user_id} item={item_key}")
+    logger.debug("vault cache busted (update) user=%s item=%s", user_id, item_key)
 
     data = _item_to_dict(item)
     set_cached_vault_item(user_id, item_key, data)
     return data
 
-
-# Delete — invalidates item + list cache
 
 @router.delete(
     "/{item_id}",
@@ -431,7 +413,7 @@ def delete_item(
 
     invalidate_vault_item(user_id, item_key)
     invalidate_vault_list(user_id)
-    logger.debug(f"vault cache busted (soft delete) user={user_id} item={item_key}")
+    logger.debug("vault cache busted (soft delete) user=%s item=%s", user_id, item_key)
 
 
 @router.post(
