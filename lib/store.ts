@@ -58,30 +58,22 @@ export const useAuthStore = create<AuthStore>((set) => ({
   lockVault: () => set({ cryptoKey: null, isVaultLocked: true, vaultItems: [] }),
 
   restoreSession: (() => {
-    /**
-     * Shared promise — prevents concurrent callers (StrictMode, multi-page mounts)
-     * from each firing their own refresh bootstrap work.
-     */
-    let _pending: Promise<boolean> | null = null;
+    let pending: Promise<boolean> | null = null;
 
     return () => {
-      if (_pending) return _pending;
-      _pending = (async () => {
+      if (pending) return pending;
+      pending = (async () => {
         try {
-          let token = getAccessToken();
-          let user = null;
+          const token = getAccessToken();
           if (!token) {
-            // HttpOnly cookie sent automatically — no localStorage needed
-            const { data: refreshData } = await authApi.refresh();
-            token = refreshData.access_token;
-            user = refreshData.user;
-            setAccessToken(token);
+            const { data } = await authApi.refresh();
+            setAccessToken(data.access_token);
+            set({ user: data.user, isAuthenticated: true });
+            return true;
           }
-          if (!user) {
-            const { data } = await authApi.me();
-            user = data;
-          }
-          set({ user, isAuthenticated: true });
+
+          const { data } = await authApi.me();
+          set({ user: data, isAuthenticated: true });
           return true;
         } catch {
           setAccessToken(null);
@@ -94,10 +86,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
           });
           return false;
         } finally {
-          _pending = null;
+          pending = null;
         }
       })();
-      return _pending;
+
+      return pending;
     };
   })(),
 
