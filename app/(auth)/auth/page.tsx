@@ -94,7 +94,7 @@ function VerifyEmailView({ token }: Readonly<{ token: string }>) {
     }
     authApi.verifyEmail(token)
       .then(({ data }) => {
-        emitAuthEvent('user-updated');
+        emitAuthEvent('user-updated', data.user);
         setState({ loading: false, message: data.message, error: false });
       })
       .catch((err) => setState({ loading: false, message: parseApiError(err, 'Verification failed'), error: true }));
