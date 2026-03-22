@@ -128,8 +128,7 @@ cd ..
 
 ```bash
 cd api
-uv run alembic upgrade head
-cd ..
+uv run alembic -c ../alembic.ini upgrade head
 ```
 
 ### 4. Start the backend
@@ -242,7 +241,7 @@ pnpm typecheck
 cd api
 uv sync --group dev
 uv run ruff check .
-uv run alembic upgrade head
+uv run alembic -c ../alembic.ini upgrade head
 uv run uvicorn index:app --reload --port 8000
 ```
 
