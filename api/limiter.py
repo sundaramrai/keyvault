@@ -2,8 +2,9 @@ import os
 from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from settings import get_redis_url
 
-_redis_url = os.getenv("REDIS_URL")
+_redis_url = get_redis_url()
 TRUST_PROXY_HEADERS = (
     os.getenv("TRUST_PROXY_HEADERS", "true" if os.getenv("VERCEL") else "false")
     .lower()
