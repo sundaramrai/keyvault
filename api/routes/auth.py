@@ -7,7 +7,7 @@ import uuid
 import secrets
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Cookie
 from jwt import InvalidTokenError
@@ -43,8 +43,6 @@ from schemas import (
 )
 from deps import get_current_user_from_db, DBUser
 from cache import (
-    get_cached_sidebar_counts,
-    set_cached_sidebar_counts,
     get_cached_refresh_token,
     get_cached_user,
     cache_refresh_token_valid,
@@ -56,6 +54,9 @@ from cache import (
 )
 from limiter import limiter, get_client_ip
 from mailer import send_email, build_app_url
+from user_cache import serialize_cached_user
+from vault_counts import get_cached_sidebar_counts_for_user
+from vault_serializers import serialize_vault_item
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ def _warm_caches(user: User, token_hash: str) -> None:
     user_id = str(user.id)
     set_cached_user(
         user_id,
-        _user_cache_dict(user),
+        serialize_cached_user(user),
     )
     cache_refresh_token_valid(token_hash, user_id, _RT_TTL_SECONDS)
 
@@ -129,121 +130,10 @@ def _hash_action_token(token: str) -> str:
     return hash_refresh_token(token)
 
 
-def _user_cache_dict(user: User) -> dict:
-    return {
-        "id": str(user.id),
-        "email": user.email,
-        "full_name": user.full_name,
-        "vault_salt": user.vault_salt,
-        "master_hint": user.master_hint,
-        "email_verified": user.email_verified,
-        "created_at": user.created_at.isoformat() if user.created_at else None,
-        "is_active": user.is_active,
-    }
-
-
 def _verify_master_password(user: User, verifier: str) -> bool:
     return bool(user.hashed_password and verify_password(verifier, user.hashed_password))
-
-
-def _sidebar_counts(db: Session, user_id) -> dict:
-    counts = db.query(
-        func.count(VaultItem.id)
-        .filter(
-            VaultItem.user_id == user_id,
-            VaultItem.is_deleted.is_(False),
-        )
-        .label("all"),
-        func.count(VaultItem.id)
-        .filter(
-            VaultItem.user_id == user_id,
-            VaultItem.is_deleted.is_(False),
-            VaultItem.category == "login",
-        )
-        .label("login"),
-        func.count(VaultItem.id)
-        .filter(
-            VaultItem.user_id == user_id,
-            VaultItem.is_deleted.is_(False),
-            VaultItem.category == "card",
-        )
-        .label("card"),
-        func.count(VaultItem.id)
-        .filter(
-            VaultItem.user_id == user_id,
-            VaultItem.is_deleted.is_(False),
-            VaultItem.category == "note",
-        )
-        .label("note"),
-        func.count(VaultItem.id)
-        .filter(
-            VaultItem.user_id == user_id,
-            VaultItem.is_deleted.is_(False),
-            VaultItem.category == "identity",
-        )
-        .label("identity"),
-        func.count(VaultItem.id)
-        .filter(
-            VaultItem.user_id == user_id,
-            VaultItem.is_deleted.is_(False),
-            VaultItem.is_favourite.is_(True),
-        )
-        .label("favourites"),
-        func.count(VaultItem.id)
-        .filter(
-            VaultItem.user_id == user_id,
-            VaultItem.is_deleted.is_(True),
-        )
-        .label("trash"),
-    ).one()
-
-    return {
-        "all": counts.all,
-        "login": counts.login,
-        "card": counts.card,
-        "note": counts.note,
-        "identity": counts.identity,
-        "favourites": counts.favourites,
-        "trash": counts.trash,
-    }
-
-
-def _get_sidebar_counts_cached(db: Session, user_id) -> dict:
-    cache_key = str(user_id)
-    cached = get_cached_sidebar_counts(cache_key)
-    if cached is not None:
-        return cached
-
-    counts = _sidebar_counts(db, user_id)
-    set_cached_sidebar_counts(cache_key, counts)
-    return counts
-
-
-def _serialize_unlock_item(item: VaultItem) -> dict:
-    return {
-        "id": str(item.id),
-        "name": item.name,
-        "category": item.category,
-        "encrypted_data": item.encrypted_data,
-        "favicon_url": item.favicon_url,
-        "is_favourite": item.is_favourite,
-        "is_deleted": item.is_deleted,
-        "deleted_at": item.deleted_at.isoformat() if item.deleted_at else None,
-        "created_at": item.created_at.isoformat() if item.created_at else None,
-        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
-    }
-
-
-def _build_auth_response(user: User, access_token: str) -> TokenResponse:
-    return TokenResponse(
-        access_token=access_token,
-        vault_salt=user.vault_salt,
-        user=UserResponse.model_validate(user),
-    )
-
-
-def _build_auth_response_from_cached(user_dict: dict, access_token: str) -> TokenResponse:
-    user = UserResponse.model_validate(user_dict)
+def _build_auth_response(user: User | dict[str, Any], access_token: str) -> TokenResponse:
+    user = UserResponse.model_validate(user)
     return TokenResponse(
         access_token=access_token,
         vault_salt=user.vault_salt,
@@ -277,12 +167,12 @@ def _build_unlock_response(db: Session, user: User) -> UnlockedVaultResponse:
     total = int(rows[0].total_count) if rows else 0
 
     return UnlockedVaultResponse(
-        items=[_serialize_unlock_item(item) for item in rows],
+        items=[serialize_vault_item(item, include_encrypted_data=True) for item in rows],
         total=total,
         page=1,
         page_size=UNLOCK_PAGE_SIZE,
         total_pages=-(-total // UNLOCK_PAGE_SIZE) if total else 0,
-        sidebar_counts=_get_sidebar_counts_cached(db, user.id),
+        sidebar_counts=get_cached_sidebar_counts_for_user(db, user.id),
     )
 
 
@@ -569,7 +459,7 @@ def refresh(  # NOSONAR - token rotation flow is intentionally explicit on this 
         response_model = _build_auth_response(user, new_access)
     else:
         cache_refresh_token_valid(new_hash, user_id, _RT_TTL_SECONDS)
-        response_model = _build_auth_response_from_cached(cached_user, new_access)
+        response_model = _build_auth_response(cached_user, new_access)
     _set_refresh_cookie(response, new_refresh)
 
     logger.info(f"TOKEN_REFRESH user={user_id}")
@@ -641,7 +531,7 @@ def verify_email(
 
     set_cached_user(
         str(user.id),
-        _user_cache_dict(user),
+        serialize_cached_user(user),
     )
     return VerifyEmailResponse(
         message="Email verified",
@@ -750,7 +640,7 @@ def update_profile(
 
     set_cached_user(
         str(current_user.id),
-        _user_cache_dict(current_user),
+        serialize_cached_user(current_user),
     )
     return current_user
 
