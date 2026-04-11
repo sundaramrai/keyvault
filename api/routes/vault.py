@@ -17,18 +17,18 @@ from schemas import (
     VaultItemResponse,
     PaginatedVaultResponse,
 )
-from deps import CurrentUser, DBUser
+from deps import CurrentSubject, DBUser
 from cache import (
-    get_cached_sidebar_counts,
     get_cached_vault_item,
     get_cached_vault_list,
     invalidate_vault_item,
     invalidate_vault_list,
-    set_cached_sidebar_counts,
     set_cached_vault_item,
     set_cached_vault_list,
 )
 from limiter import limiter, get_client_ip
+from vault_counts import get_cached_sidebar_counts_for_user
+from vault_serializers import serialize_vault_item
 
 logger = logging.getLogger(__name__)
 
@@ -37,108 +37,6 @@ router = APIRouter(prefix="/vault", tags=["vault"])
 ITEM_NOT_FOUND_MSG = "Item not found"
 MAX_PAGE_SIZE = 100
 VAULT_ITEM_LIMIT = 1000
-
-
-def _sidebar_counts(db: Session, user_id) -> dict:
-    counts = db.query(
-        func.count(VaultItem.id)
-        .filter(
-            VaultItem.user_id == user_id,
-            VaultItem.is_deleted.is_(False),
-        )
-        .label("all"),
-        func.count(VaultItem.id)
-        .filter(
-            VaultItem.user_id == user_id,
-            VaultItem.is_deleted.is_(False),
-            VaultItem.category == "login",
-        )
-        .label("login"),
-        func.count(VaultItem.id)
-        .filter(
-            VaultItem.user_id == user_id,
-            VaultItem.is_deleted.is_(False),
-            VaultItem.category == "card",
-        )
-        .label("card"),
-        func.count(VaultItem.id)
-        .filter(
-            VaultItem.user_id == user_id,
-            VaultItem.is_deleted.is_(False),
-            VaultItem.category == "note",
-        )
-        .label("note"),
-        func.count(VaultItem.id)
-        .filter(
-            VaultItem.user_id == user_id,
-            VaultItem.is_deleted.is_(False),
-            VaultItem.category == "identity",
-        )
-        .label("identity"),
-        func.count(VaultItem.id)
-        .filter(
-            VaultItem.user_id == user_id,
-            VaultItem.is_deleted.is_(False),
-            VaultItem.is_favourite.is_(True),
-        )
-        .label("favourites"),
-        func.count(VaultItem.id)
-        .filter(
-            VaultItem.user_id == user_id,
-            VaultItem.is_deleted.is_(True),
-        )
-        .label("trash"),
-    ).one()
-
-    return {
-        "all": counts.all,
-        "login": counts.login,
-        "card": counts.card,
-        "note": counts.note,
-        "identity": counts.identity,
-        "favourites": counts.favourites,
-        "trash": counts.trash,
-    }
-
-
-def _get_sidebar_counts_cached(db: Session, user_id) -> dict:
-    cache_key = str(user_id)
-    cached = get_cached_sidebar_counts(cache_key)
-    if cached is not None:
-        return cached
-
-    counts = _sidebar_counts(db, user_id)
-    set_cached_sidebar_counts(cache_key, counts)
-    return counts
-
-
-def _item_to_dict(item) -> dict:
-    return {
-        "id": str(item.id),
-        "name": item.name,
-        "category": item.category,
-        "encrypted_data": item.encrypted_data,
-        "favicon_url": item.favicon_url,
-        "is_favourite": item.is_favourite,
-        "is_deleted": item.is_deleted,
-        "deleted_at": item.deleted_at.isoformat() if item.deleted_at else None,
-        "created_at": item.created_at.isoformat() if item.created_at else None,
-        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
-    }
-
-
-def _item_to_summary_dict(item) -> dict:
-    return {
-        "id": str(item.id),
-        "name": item.name,
-        "category": item.category,
-        "favicon_url": item.favicon_url,
-        "is_favourite": item.is_favourite,
-        "is_deleted": item.is_deleted,
-        "deleted_at": item.deleted_at.isoformat() if item.deleted_at else None,
-        "created_at": item.created_at.isoformat() if item.created_at else None,
-        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
-    }
 
 
 def _log_action(db: Session, user_id, action: str, request: Request) -> None:
@@ -195,7 +93,7 @@ def export_vault(
 @router.get("", response_model=PaginatedVaultResponse)
 def list_items(
     db: Annotated[Session, Depends(get_db)],
-    current_user: CurrentUser,
+    current_user: CurrentSubject,
     category: Annotated[Optional[Literal["login", "card", "note", "identity"]], Query()] = None,
     search: Annotated[Optional[str], Query(max_length=128)] = None,
     favourites_only: Annotated[bool, Query()] = False,
@@ -259,12 +157,12 @@ def list_items(
         ) or 0
 
     result = {
-        "items": [_item_to_summary_dict(row) for row in rows],
+        "items": [serialize_vault_item(row, include_encrypted_data=False) for row in rows],
         "total": total,
         "page": page,
         "page_size": page_size,
         "total_pages": -(-total // page_size) if total else 0,
-        "sidebar_counts": None if clean_search else _get_sidebar_counts_cached(db, current_user.id),
+        "sidebar_counts": None if clean_search else get_cached_sidebar_counts_for_user(db, current_user.id),
     }
 
     if not clean_search:
@@ -283,7 +181,7 @@ def list_items(
 def get_item(
     item_id: UUID,
     db: Annotated[Session, Depends(get_db)],
-    current_user: CurrentUser,
+    current_user: CurrentSubject,
 ):
     user_id = str(current_user.id)
     item_key = str(item_id)
@@ -302,7 +200,7 @@ def get_item(
     if not item:
         raise HTTPException(status_code=404, detail=ITEM_NOT_FOUND_MSG)
 
-    data = _item_to_dict(item)
+    data = serialize_vault_item(item, include_encrypted_data=True)
     set_cached_vault_item(user_id, item_key, data)
     return data
 
@@ -345,7 +243,7 @@ def create_item(
     invalidate_vault_list(user_id)
     logger.debug("vault:list cache busted (create) user=%s", user_id)
 
-    data = _item_to_dict(item)
+    data = serialize_vault_item(item, include_encrypted_data=True)
     set_cached_vault_item(user_id, str(item.id), data)
     return data
 
@@ -381,7 +279,7 @@ def update_item(
     invalidate_vault_list(user_id)
     logger.debug("vault cache busted (update) user=%s item=%s", user_id, item_key)
 
-    data = _item_to_dict(item)
+    data = serialize_vault_item(item, include_encrypted_data=True)
     set_cached_vault_item(user_id, item_key, data)
     return data
 
@@ -444,7 +342,7 @@ def restore_item(
 
     invalidate_vault_item(user_id, item_key)
     invalidate_vault_list(user_id)
-    data = _item_to_dict(item)
+    data = serialize_vault_item(item, include_encrypted_data=True)
     set_cached_vault_item(user_id, item_key, data)
     return data
 
