@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { KeyRound, Mail, Settings, Trash2, UserRound, MonitorCog, MoonStar, SunMedium } from 'lucide-react';
 import { Modal } from './ItemModal';
 import { applyThemePreference, getStoredThemePreference } from '@/lib/theme';
@@ -89,11 +89,7 @@ export function SettingsModal({
   onChangeMasterPassword,
   onDeleteAccount,
 }: Readonly<SettingsModalProps>) {
-  const [theme, setTheme] = useState<ThemePreference>('system');
-
-  useEffect(() => {
-    setTheme(getStoredThemePreference());
-  }, []);
+  const [theme, setTheme] = useState<ThemePreference>(() => getStoredThemePreference());
 
   const handleThemeChange = (nextTheme: ThemePreference) => {
     setTheme(nextTheme);

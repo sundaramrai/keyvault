@@ -1,13 +1,14 @@
 from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from settings import get_redis_url, is_production
+from api.settings import get_settings
 
-_redis_url = get_redis_url()
+_settings = get_settings()
+_redis_url = _settings.resolved_redis_url
 
 
 def _should_trust_proxy_headers() -> bool:
-    return is_production()
+    return _settings.trust_proxy_headers
 
 
 def get_client_ip(request: Request) -> str:

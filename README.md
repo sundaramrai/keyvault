@@ -119,23 +119,19 @@ pnpm install
 ### 2. Install backend dependencies
 
 ```bash
-cd api
-uv sync --group dev
-cd ..
+uv sync --project api --group dev
 ```
 
 ### 3. Run database migrations
 
 ```bash
-cd api
-uv run alembic -c ../alembic.ini upgrade head
+uv run --project api alembic -c alembic.ini upgrade head
 ```
 
 ### 4. Start the backend
 
 ```bash
-cd api
-uv run uvicorn index:app --reload --port 8000
+uv run --project api uvicorn api.index:app --reload --port 8000
 ```
 
 Redis is optional in local development. When `ENVIRONMENT=development`, the API disables Redis-backed cache and rate limiting. When `ENVIRONMENT=production`, Redis is enabled automatically if `REDIS_URL` is set.
@@ -240,11 +236,10 @@ pnpm typecheck
 ### Backend
 
 ```bash
-cd api
-uv sync --group dev
-uv run ruff check .
-uv run alembic -c ../alembic.ini upgrade head
-uv run uvicorn index:app --reload --port 8000
+uv sync --project api --group dev
+uv run --project api ruff check api alembic
+uv run --project api alembic -c alembic.ini upgrade head
+uv run --project api uvicorn api.index:app --reload --port 8000
 ```
 
 ## License

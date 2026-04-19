@@ -9,7 +9,6 @@ Handles: password hashing (bcrypt), JWT creation/verification,
 and secure salt generation for client-side key derivation.
 """
 
-import os
 import secrets
 import hashlib
 import uuid
@@ -19,10 +18,12 @@ from typing import Optional
 import bcrypt
 import jwt
 
+from api.settings import get_settings
+
 # Hard-fail at startup if JWT_SECRET is not set.
 # An ephemeral fallback would silently invalidate all tokens on every
 # Vercel cold-start / redeployment, so we raise immediately instead.
-_jwt_secret = os.environ.get("JWT_SECRET")
+_jwt_secret = get_settings().jwt_secret
 if not _jwt_secret:
     raise RuntimeError(
         "JWT_SECRET environment variable is not set. "

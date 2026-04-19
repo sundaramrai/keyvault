@@ -2,7 +2,6 @@
 routes/auth.py — Auth routes with Redis cache integration.
 """
 
-import os
 import uuid
 import secrets
 import logging
@@ -14,8 +13,17 @@ from jwt import InvalidTokenError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from database import get_db, User, AuditLog, RefreshToken, VaultItem, AuthToken
-from crypto import (
+from api.cache import (
+    cache_refresh_token_valid,
+    get_cached_refresh_token,
+    get_cached_user,
+    invalidate_all_vault,
+    invalidate_user,
+    is_token_blacklisted,
+    revoke_refresh_token_cache,
+    set_cached_user,
+)
+from api.crypto import (
     hash_password,
     verify_password,
     generate_salt,
@@ -25,7 +33,11 @@ from crypto import (
     hash_refresh_token,
     REFRESH_TOKEN_EXPIRE_DAYS,
 )
-from schemas import (
+from api.database import get_db, User, AuditLog, RefreshToken, VaultItem, AuthToken
+from api.deps import get_current_user_from_db, DBUser
+from api.limiter import limiter, get_client_ip
+from api.mailer import send_email, build_app_url
+from api.schemas import (
     RegisterRequest,
     LoginChallengeRequest,
     LoginChallengeResponse,
@@ -41,22 +53,10 @@ from schemas import (
     MessageResponse,
     UnlockedVaultResponse,
 )
-from deps import get_current_user_from_db, DBUser
-from cache import (
-    get_cached_refresh_token,
-    get_cached_user,
-    cache_refresh_token_valid,
-    revoke_refresh_token_cache,
-    is_token_blacklisted,
-    invalidate_user,
-    invalidate_all_vault,
-    set_cached_user,
-)
-from limiter import limiter, get_client_ip
-from mailer import send_email, build_app_url
-from user_cache import serialize_cached_user
-from vault_counts import get_cached_sidebar_counts_for_user
-from vault_serializers import serialize_vault_item
+from api.settings import get_settings
+from api.user_cache import serialize_cached_user
+from api.vault_counts import get_cached_sidebar_counts_for_user
+from api.vault_serializers import serialize_vault_item
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ INVALID_EMAIL_OR_PASSWORD = "Invalid email or password"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-IS_PROD = os.getenv("ENVIRONMENT", "production") == "production"
+IS_PROD = get_settings().is_production
 
 AUTH_COOKIE_PATH = "/"
 _RT_TTL_SECONDS = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600

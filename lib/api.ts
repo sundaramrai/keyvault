@@ -52,8 +52,8 @@ api.interceptors.response.use(
         if (!_refreshPromise) {
           // Start a new refresh and clear the mutex only after all awaiting
           // callers have received the token (i.e. after the microtask queue drains).
-          const promise = axios
-            .post('/api/auth/refresh', {}, { withCredentials: true })
+          const promise = api
+            .post<AuthSession>('/api/auth/refresh')
             .then(({ data }) => {
               setAccessToken(data.access_token);
               return data.access_token as string;

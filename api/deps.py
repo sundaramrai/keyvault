@@ -18,10 +18,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import InvalidTokenError
 from sqlalchemy.orm import Session
 
-from cache import get_cached_user, set_cached_user
-from crypto import decode_token
-from database import User, get_db
-from user_cache import CachedUser, deserialize_cached_user, serialize_cached_user
+from api.cache import get_cached_user, set_cached_user
+from api.crypto import decode_token
+from api.database import User, get_db
+from api.user_cache import CachedUser, deserialize_cached_user, serialize_cached_user
 
 logger = logging.getLogger(__name__)
 

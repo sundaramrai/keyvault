@@ -10,15 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from database import get_db, VaultItem, AuditLog
-from schemas import (
-    VaultItemCreate,
-    VaultItemUpdate,
-    VaultItemResponse,
-    PaginatedVaultResponse,
-)
-from deps import CurrentSubject, DBUser
-from cache import (
+from api.cache import (
     get_cached_vault_item,
     get_cached_vault_list,
     invalidate_vault_item,
@@ -26,9 +18,17 @@ from cache import (
     set_cached_vault_item,
     set_cached_vault_list,
 )
-from limiter import limiter, get_client_ip
-from vault_counts import get_cached_sidebar_counts_for_user
-from vault_serializers import serialize_vault_item
+from api.database import get_db, VaultItem, AuditLog
+from api.deps import CurrentSubject, DBUser
+from api.limiter import limiter, get_client_ip
+from api.schemas import (
+    VaultItemCreate,
+    VaultItemUpdate,
+    VaultItemResponse,
+    PaginatedVaultResponse,
+)
+from api.vault_counts import get_cached_sidebar_counts_for_user
+from api.vault_serializers import serialize_vault_item
 
 logger = logging.getLogger(__name__)
 

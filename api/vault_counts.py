@@ -3,8 +3,8 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from cache import get_cached_sidebar_counts, set_cached_sidebar_counts
-from database import VaultItem
+from api.cache import get_cached_sidebar_counts, set_cached_sidebar_counts
+from api.database import VaultItem
 
 
 def compute_sidebar_counts(db: Session, user_id: Any) -> dict[str, int]:

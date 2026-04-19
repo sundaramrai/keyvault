@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import { useEffect, useEffectEvent, useRef } from 'react';
 import { IDLE_MS } from '../types';
 import { toastService } from '../../../lib/toast';
 
@@ -12,6 +12,10 @@ const IDLE_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'
  */
 export function useIdleTimer(isVaultLocked: boolean, lockVault: () => void) {
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const handleIdle = useEffectEvent(() => {
+        lockVault();
+        toastService.info('Vault auto-locked after 5 min of inactivity');
+    });
 
     useEffect(() => {
         if (isVaultLocked) return;
@@ -19,8 +23,7 @@ export function useIdleTimer(isVaultLocked: boolean, lockVault: () => void) {
         const reset = () => {
             if (timerRef.current) clearTimeout(timerRef.current);
             timerRef.current = setTimeout(() => {
-                lockVault();
-                toastService.info('Vault auto-locked after 5 min of inactivity');
+                handleIdle();
             }, IDLE_MS);
         };
 
@@ -31,6 +34,6 @@ export function useIdleTimer(isVaultLocked: boolean, lockVault: () => void) {
             if (timerRef.current) clearTimeout(timerRef.current);
             IDLE_EVENTS.forEach((e) => globalThis.removeEventListener(e, reset));
         };
-    }, [isVaultLocked, lockVault]);
+    }, [handleIdle, isVaultLocked]);
 }
 

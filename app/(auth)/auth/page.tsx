@@ -84,6 +84,8 @@ function VerifyEmailView({ token }: Readonly<{ token: string }>) {
   });
 
   useEffect(() => {
+    let active = true;
+
     if (!token) {
       setState({
         loading: false,
@@ -92,12 +94,21 @@ function VerifyEmailView({ token }: Readonly<{ token: string }>) {
       });
       return;
     }
+
     authApi.verifyEmail(token)
       .then(({ data }) => {
+        if (!active) return;
         emitAuthEvent('user-updated', data.user);
         setState({ loading: false, message: data.message, error: false });
       })
-      .catch((err) => setState({ loading: false, message: parseApiError(err, 'Verification failed'), error: true }));
+      .catch((err) => {
+        if (!active) return;
+        setState({ loading: false, message: parseApiError(err, 'Verification failed'), error: true });
+      });
+
+    return () => {
+      active = false;
+    };
   }, [token]);
 
   return (
@@ -316,14 +327,18 @@ function AuthPageContent() {
   const initialTab = params.get('tab') === 'register' ? 'register' : 'login';
 
   useEffect(() => {
+    let active = true;
+
     if (mode) {
       setCheckingSession(false);
-      return;
+      return () => {
+        active = false;
+      };
     }
 
-    let active = true;
     if (isAuthenticated) {
       setCheckingSession(false);
+      router.replace('/dashboard');
       return () => {
         active = false;
       };
@@ -341,12 +356,6 @@ function AuthPageContent() {
       active = false;
     };
   }, [isAuthenticated, mode, restoreSession, router]);
-
-  useEffect(() => {
-    if (isAuthenticated && !mode) {
-      router.replace('/dashboard');
-    }
-  }, [isAuthenticated, mode, router]);
 
   if (mode === 'verify-email') return <VerifyEmailView token={token} />;
   if (mode === 'reset-password') return <ResetNotSupportedView />;

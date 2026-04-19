@@ -17,7 +17,8 @@ import logging
 from typing import Any, Optional
 
 import redis
-from settings import get_redis_url
+
+from api.settings import get_redis_url
 
 logger = logging.getLogger(__name__)
 
