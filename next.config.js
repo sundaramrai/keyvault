@@ -1,9 +1,12 @@
-const apiOrigin = process.env.NEXT_PUBLIC_API_URL?.trim();
-const shouldProxyApi = Boolean(apiOrigin) && process.env.NODE_ENV !== 'production';
+const apiOrigin =
+  process.env.INTERNAL_API_ORIGIN?.trim() ||
+  process.env.NEXT_PUBLIC_API_URL?.trim();
+const shouldProxyApi = Boolean(apiOrigin);
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  output: 'standalone',
 
   // Reduce production bundle size - skip inline source maps
   productionBrowserSourceMaps: false,
