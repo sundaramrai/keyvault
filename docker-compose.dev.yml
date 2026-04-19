@@ -1,0 +1,105 @@
+services:
+  ui:
+    build:
+      target: dev
+    depends_on:
+      api:
+        condition: service_healthy
+    command:
+      [
+        "sh",
+        "-c",
+        "LOCKFILE_HASH=$$(sha256sum pnpm-lock.yaml | cut -d ' ' -f1);
+          CURRENT_HASH=$$(cat node_modules/.lockfile-sha 2>/dev/null || true);
+          if [ \"$$CURRENT_HASH\" != \"$$LOCKFILE_HASH\" ]; then CI=true pnpm
+          install --frozen-lockfile --config.confirmModulesPurge=false && printf
+          '%s' \"$$LOCKFILE_HASH\" > node_modules/.lockfile-sha; fi && exec pnpm
+          exec next dev --turbo --hostname 0.0.0.0 --port 3000",
+      ]
+    environment:
+      INTERNAL_API_ORIGIN: http://api:8000
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: "1"
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "${UI_PORT:-3000}:3000"
+    volumes:
+      - .:/app
+      - ui_node_modules:/app/node_modules
+      - ui_next_cache:/app/.next
+      - ui_pnpm_store:/root/.local/share/pnpm/store
+
+  api:
+    build:
+      target: dev
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      [
+        "sh",
+        "-c",
+        "LOCKFILE_HASH=$$(sha256sum uv.lock | cut -d ' ' -f1);
+          CURRENT_HASH=$$(cat .venv/.lockfile-sha 2>/dev/null || true); if [
+          \"$$CURRENT_HASH\" != \"$$LOCKFILE_HASH\" ] || [ ! -x
+          .venv/bin/uvicorn ]; then uv sync --frozen --group dev && printf '%s'
+          \"$$LOCKFILE_HASH\" > .venv/.lockfile-sha; fi && uv run alembic -c
+          ../alembic.ini upgrade head && exec uv run uvicorn index:app --host
+          0.0.0.0 --port 8000 --reload --reload-dir /app/api --reload-dir
+          /app/alembic",
+      ]
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-cipheria}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      REDIS_ENABLED: ${REDIS_ENABLED:-true}
+      REDIS_URL: redis://redis:6379/0
+      SUPPRESS_HEALTHCHECK_ACCESS_LOGS: "true"
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./api:/app/api
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini:ro
+      - api_venv:/app/api/.venv
+      - api_uv_cache:/root/.cache/uv
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cipheria}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d
+            ${POSTGRES_DB:-cipheria}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:8-alpine
+    command: [ "redis-server", "--save", "", "--appendonly", "no" ]
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  ui_node_modules:
+  ui_next_cache:
+  ui_pnpm_store:
+  api_venv:
+  api_uv_cache:
