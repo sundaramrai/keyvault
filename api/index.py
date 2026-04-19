@@ -17,6 +17,17 @@ from routes.auth import router as auth_router
 from routes.vault import router as vault_router
 
 logger = logging.getLogger("cipheria.api")
+access_logger = logging.getLogger("uvicorn.access")
+
+
+class _HealthcheckAccessFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return '"GET /health ' not in message
+
+
+if os.getenv("SUPPRESS_HEALTHCHECK_ACCESS_LOGS", "").lower() in {"1", "true", "yes", "on"}:
+    access_logger.addFilter(_HealthcheckAccessFilter())
 
 IS_PROD = (
     os.getenv("ENVIRONMENT") == "production"
