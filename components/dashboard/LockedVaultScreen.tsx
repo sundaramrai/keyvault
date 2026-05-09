@@ -1,5 +1,6 @@
 'use client';
 import { Lock } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { useSignOut } from './hooks/useSignOut';
 import type { UserProfile } from '@/lib/types';
 
@@ -17,6 +18,11 @@ export function LockedVaultScreen({
     unlocking, unlockVault, handleLogout,
 }: Readonly<Props>) {
     const { signingOut, handleSignout } = useSignOut(handleLogout);
+    const masterPasswordRef = useRef<HTMLInputElement | null>(null);
+
+    useEffect(() => {
+        masterPasswordRef.current?.focus();
+    }, []);
 
     return (
         <div style={{
@@ -59,8 +65,9 @@ export function LockedVaultScreen({
                 <div className="glass animate-fade-up stagger-2" style={{ borderRadius: 'var(--radius-xl)', padding: 'clamp(22px, 6vw, 36px)' }}>
                     <form onSubmit={unlockVault} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <input
+                            ref={masterPasswordRef}
                             className="input-field" type="password"
-                            placeholder="Master password" required autoFocus
+                            placeholder="Master password" required
                             value={masterPassword}
                             onChange={onMasterPasswordChange}
                         />
