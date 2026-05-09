@@ -539,35 +539,40 @@ export default function Page() {
     if (existingRequest !== undefined) return await existingRequest;
 
     const requestPromise = (async () => {
-      const params: {
-        category?: Exclude<Category, 'all'>;
-        deleted_only: boolean;
-        favourites_only: boolean;
-        page: number;
-        page_size: number;
-      } = {
-        page: requestedPage,
-        page_size: PAGE_SIZE,
-        deleted_only: view.deletedOnly,
-        favourites_only: view.deletedOnly ? false : view.favouritesOnly,
-      };
-      if (!view.deletedOnly && !view.favouritesOnly && view.category !== 'all') {
-        params.category = view.category;
-      }
+      let pageToLoad = requestedPage;
 
-      const { data } = await vaultApi.list(params);
-      if (data.total_pages > 0 && requestedPage > data.total_pages) {
-        return fetchVaultPage(data.total_pages, view);
-      }
+      while (true) {
+        const params: {
+          category?: Exclude<Category, 'all'>;
+          deleted_only: boolean;
+          favourites_only: boolean;
+          page: number;
+          page_size: number;
+        } = {
+          page: pageToLoad,
+          page_size: PAGE_SIZE,
+          deleted_only: view.deletedOnly,
+          favourites_only: view.deletedOnly ? false : view.favouritesOnly,
+        };
+        if (!view.deletedOnly && !view.favouritesOnly && view.category !== 'all') {
+          params.category = view.category;
+        }
 
-      const { vaultItems: storeItems } = useAuthStore.getState();
-      return {
-        items: data.items.map((item: VaultItem) => rehydrateListItem(item, storeItems)),
-        page: data.total_pages > 0 ? requestedPage : 1,
-        totalPages: data.total_pages ?? 0,
-        totalItems: data.total ?? 0,
-        sidebarCounts: data.sidebar_counts,
-      };
+        const { data } = await vaultApi.list(params);
+        if (data.total_pages > 0 && pageToLoad > data.total_pages) {
+          pageToLoad = data.total_pages;
+          continue;
+        }
+
+        const { vaultItems: storeItems } = useAuthStore.getState();
+        return {
+          items: data.items.map((item: VaultItem) => rehydrateListItem(item, storeItems)),
+          page: data.total_pages > 0 ? pageToLoad : 1,
+          totalPages: data.total_pages ?? 0,
+          totalItems: data.total ?? 0,
+          sidebarCounts: data.sidebar_counts,
+        };
+      }
     })();
 
     inFlightViewLoadsRef.current[requestKey] = requestPromise;
