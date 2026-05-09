@@ -35,7 +35,7 @@ export const fetchAndDecryptItem = async (item: VaultItem,
         dec = await decryptData(encryptedData, key);
     } catch (cryptoErr) {
         console.error('[decrypt] WebCrypto error for item', item.id, cryptoErr);
-        throw new Error('CRYPTO_FAIL');
+        throw new Error('CRYPTO_FAIL', { cause: cryptoErr });
     }
     const enriched: VaultItem = { ...item, encrypted_data: encryptedData, decrypted: dec as VaultItem['decrypted'] };
     onUpdate(item.id, enriched);
